@@ -290,6 +290,26 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .spec-opt.wrong{background:rgba(228,0,43,0.15);border-color:var(--red);color:#ff8a9c}
 .spec-result{margin-top:0.8rem;padding-top:0.8rem;border-top:1px solid var(--border-soft);font-size:0.78rem}
 .spec-deadline{background:rgba(160,100,220,0.1);border:1px solid #5a3a7a;border-radius:10px;padding:0.65rem 0.85rem;margin:0 1.2rem 0.85rem;font-size:0.78rem;color:#d0a8f0}
+
+/* RESUMEN SALÓN DE LA FAMA */
+.hof-summary{background:linear-gradient(145deg,var(--surface) 0%,var(--surface2) 100%);border:1px solid var(--border);border-radius:14px;padding:1.1rem 1.2rem;margin-bottom:1.5rem;position:relative;overflow:hidden}
+.hof-summary::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--gold),var(--amber),var(--gold))}
+.hof-sum-title{font-family:'Bebas Neue',sans-serif;font-size:1.15rem;letter-spacing:1px;color:var(--gold);margin-bottom:0.85rem;display:flex;align-items:center;gap:6px}
+.hof-sum-row{display:flex;align-items:center;gap:0.85rem;padding:0.55rem 0;border-bottom:1px solid var(--border-soft)}
+.hof-sum-row:last-child{border-bottom:none}
+.hof-sum-season{font-size:0.8rem;color:var(--muted);min-width:130px;flex-shrink:0}
+.hof-sum-champ{flex:1;font-size:0.95rem;font-weight:700;color:var(--gold);display:flex;align-items:center;gap:6px}
+.hof-sum-count{font-size:0.68rem;color:var(--dim);background:rgba(240,180,41,0.1);padding:2px 7px;border-radius:4px;font-weight:500}
+.hof-titles{margin-top:1rem;padding-top:0.9rem;border-top:1px solid var(--border-soft)}
+.hof-titles-label{font-size:0.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:0.6rem}
+.hof-title-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);border-radius:20px;padding:4px 11px;font-size:0.8rem;margin:0 5px 5px 0}
+.hof-title-name{color:var(--gold);font-weight:500}
+.hof-title-num{color:var(--muted);font-size:0.72rem}
+.hof-divider{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:1px;color:var(--muted);margin-bottom:0.85rem}
+@media(max-width:640px){
+  .hof-sum-row{flex-direction:column;align-items:flex-start;gap:2px}
+  .hof-sum-season{min-width:unset;font-size:0.72rem}
+}
 </style>
 </head>
 <body>
@@ -1141,10 +1161,44 @@ function renderChampions(){
     list.innerHTML='<div class="empty-state"><span class="icon">🏆</span>Aún no hay campeones registrados.<br><span style="font-size:0.78rem;color:var(--dim)">El admin puede agregarlos desde el panel.</span></div>';
     return;
   }
-  list.innerHTML='';
+
+  // Contar títulos por persona
+  const titles={};
   appData.champions.forEach(c=>{
-    const card=document.createElement('div');card.className='champ-card';
-    card.innerHTML=`
+    if(c.champion)titles[c.champion]=(titles[c.champion]||0)+1;
+  });
+  const ranked=Object.entries(titles).sort((a,b)=>b[1]-a[1]);
+
+  // Resumen: solo campeones
+  const summaryRows=appData.champions.map(c=>`
+    <div class="hof-sum-row">
+      <span class="hof-sum-season">${esc(c.season)}</span>
+      <span class="hof-sum-champ">🥇 ${esc(c.champion||'—')}
+        ${titles[c.champion]>1?`<span class="hof-sum-count">${titles[c.champion]}× campeón</span>`:''}
+      </span>
+    </div>`).join('');
+
+  const titleChips=ranked.map(([name,n])=>`
+    <span class="hof-title-chip">
+      <span>🏆</span>
+      <span class="hof-title-name">${esc(name)}</span>
+      <span class="hof-title-num">×${n}</span>
+    </span>`).join('');
+
+  const summary=`
+    <div class="hof-summary">
+      <div class="hof-sum-title">🏆 Campeones por temporada</div>
+      ${summaryRows}
+      ${ranked.length?`<div class="hof-titles">
+        <div class="hof-titles-label">Títulos acumulados</div>
+        ${titleChips}
+      </div>`:''}
+    </div>
+    <div class="hof-divider">Detalle por temporada</div>`;
+
+  // Tarjetas completas
+  const cards=appData.champions.map(c=>`
+    <div class="champ-card">
       <span class="trophy-big">🏆</span>
       <div class="champ-season">${esc(c.season)}</div>
       <div class="champ-podium">
@@ -1169,9 +1223,10 @@ function renderChampions(){
             <div class="podium-name">${esc(c.last_place)}</div>
           </div>
         </div>`:''}
-      </div>`;
-    list.appendChild(card);
-  });
+      </div>
+    </div>`).join('');
+
+  list.innerHTML=summary+cards;
 }
 
 // ===== PERFIL =====
