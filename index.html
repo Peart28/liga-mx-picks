@@ -479,43 +479,40 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 <div class="toast" id="toast"></div>
 
 <script>
-// ===== SUPABASE =====
-const SUPA_URL='https://zspiyakqizkajmfmosnb.supabase.co';
-const SUPA_KEY='sb_publishable_Y31wRe3hmnj1BjE5RuyHzA_0oHSMyk_';
+// ===== API (Railway backend) =====
+let authToken = null;
 
-async function supa(method,path,body){
-  const opts={method,headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}};
-  if(method==='POST')opts.headers['Prefer']='resolution=merge-duplicates';
-  if(body)opts.body=JSON.stringify(body);
-  const res=await fetch(SUPA_URL+'/rest/v1/'+path,opts);
-  const text=await res.text();
-  if(!res.ok)throw new Error(text);
-  return text?JSON.parse(text):null;
+async function api(method, path, body){
+  const opts = { method, headers: { 'Content-Type':'application/json' } };
+  if(authToken) opts.headers['x-auth-token'] = authToken;
+  if(body) opts.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opts);
+  let data = null;
+  try{ data = await res.json(); }catch(e){}
+  if(!res.ok) throw new Error((data && data.error) || ('Error ' + res.status));
+  return data;
 }
 
-const db={
-  async getConfig(k){const r=await supa('GET',`config?key=eq.${encodeURIComponent(k)}&select=value`);return r&&r[0]?r[0].value:null},
-  async setConfig(key,value){await supa('POST','config',{key,value})},
-  async getUser(u){const r=await supa('GET',`users?username=eq.${encodeURIComponent(u)}&select=*`);return r&&r[0]?r[0]:null},
-  async createUser(username,password,role='user'){await supa('POST','users',{username,password,role})},
-  async getAllUsers(){return await supa('GET','users?select=username,role,apodo&order=username')||[]},
-  async deleteUser(u){await supa('DELETE',`users?username=eq.${encodeURIComponent(u)}`)},
-  async updateApodo(username,apodo){await supa('PATCH',`users?username=eq.${encodeURIComponent(username)}`,{apodo})},
-  async updatePassword(username,password){await supa('PATCH',`users?username=eq.${encodeURIComponent(username)}`,{password})},
-  async getJornadas(){return await supa('GET','jornadas?select=*&order=id')||[]},
-  async upsertJornada(id,matches){await supa('POST','jornadas',{id,matches})},
-  async getAllPicks(){return await supa('GET','picks?select=*')||[]},
-  async upsertPick(username,jornada,match_id,pick,king){await supa('POST','picks',{username,jornada,match_id,pick,king})},
-  async getTeams(){return await supa('GET','teams?select=*&order=name')||[]},
-  async upsertTeam(name,logo_url){await supa('POST','teams',{name,logo_url:logo_url||null})},
-  async deleteTeam(name){await supa('DELETE',`teams?name=eq.${encodeURIComponent(name)}`)},
-  async getChampions(){return await supa('GET','champions?select=*&order=id.desc')||[]},
-  async addChampion(season,champion,runner_up,last_place){await supa('POST','champions',{season,champion,runner_up,last_place})},
-  async deleteChampion(id){await supa('DELETE',`champions?id=eq.${id}`)},
-  async getNotifications(u){return await supa('GET',`notifications?username=eq.${encodeURIComponent(u)}&order=created_at.desc&limit=50`)||[]},
-  async insertNotification(username,message){await supa('POST','notifications',{username,message,read:false})},
-  async markNotifRead(id){await supa('PATCH',`notifications?id=eq.${id}`,{read:true})},
-  async markAllNotifsRead(u){await supa('PATCH',`notifications?username=eq.${encodeURIComponent(u)}`,{read:true})},
+const db = {
+  login:      (username,password)      => api('POST','/login',{username,password}),
+  register:   (username,password,code) => api('POST','/register',{username,password,code}),
+  logout:     ()                       => api('POST','/logout'),
+  getData:    ()                       => api('GET','/data'),
+  savePick:   (jornada,match_id,pick,king) => api('POST','/pick',{jornada,match_id,pick,king}),
+  setApodo:   (apodo)                  => api('POST','/profile/apodo',{apodo}),
+  setPassword:(current,nw)             => api('POST','/profile/password',{current,new:nw}),
+  getNotifications: ()                 => api('GET','/notifications'),
+  notifySelf: (message)                => api('POST','/notifications/self',{message}),
+  markNotifRead:    (id)               => api('POST','/notifications/read/'+id),
+  markAllNotifsRead:()                 => api('POST','/notifications/read-all'),
+  setConfig:  (key,value)              => api('POST','/admin/config',{key,value}),
+  upsertTeam: (name,logo_url)          => api('POST','/admin/team',{name,logo_url}),
+  deleteTeam: (name)                   => api('DELETE','/admin/team/'+encodeURIComponent(name)),
+  upsertJornada:(id,matches)           => api('POST','/admin/jornada',{id,matches}),
+  saveResult: (jornada,match_id,result)=> api('POST','/admin/result',{jornada,match_id,result}),
+  addChampion:(season,champion,runner_up,last_place) => api('POST','/admin/champion',{season,champion,runner_up,last_place}),
+  deleteChampion:(id)                  => api('DELETE','/admin/champion/'+id),
+  deleteUser: (username)               => api('DELETE','/admin/user/'+encodeURIComponent(username)),
 };
 
 // ===== STATE =====
@@ -527,7 +524,18 @@ function showLoading(s,m){document.getElementById('loading-overlay').style.displ
 
 window.onload=async()=>{
   showLoading(true,'Conectando...');
-  try{await db.getConfig('regCode')}catch(e){console.warn(e)}
+  const saved=localStorage.getItem('lmx_token');
+  if(saved){
+    authToken=saved;
+    try{
+      await loadAppData();
+      const me=appData.users.find(u=>u.username===localStorage.getItem('lmx_user'));
+      if(me){
+        currentUser=me.username;currentUserRole=me.role;currentApodo=me.apodo||me.username;
+        showLoading(false);startApp();return;
+      }
+    }catch(e){ authToken=null; localStorage.removeItem('lmx_token'); }
+  }
   showLoading(false);
   showScreen('login-screen');
 };
@@ -540,34 +548,39 @@ async function doLogin(){
   if(!u||!p){err.textContent='Llena todos los campos.';return}
   const btn=document.getElementById('login-btn');btn.disabled=true;btn.textContent='Entrando...';
   try{
-    const user=await db.getUser(u);
-    if(!user){err.textContent='Usuario no encontrado.';return}
-    if(user.password!==p){err.textContent='Contraseña incorrecta.';return}
-    currentUser=u;currentUserRole=user.role;currentApodo=user.apodo||u;
+    const r=await db.login(u,p);
+    authToken=r.token;
+    localStorage.setItem('lmx_token',r.token);
+    localStorage.setItem('lmx_user',r.username);
+    currentUser=r.username;currentUserRole=r.role;currentApodo=r.apodo;
     await loadAppData();startApp();
-  }catch(e){err.textContent='Error de conexión. Intenta de nuevo.';console.error(e)}
+  }catch(e){err.textContent=e.message;console.error(e)}
   finally{btn.disabled=false;btn.textContent='Entrar'}
 }
 
 async function doRegister(){
   const u=document.getElementById('reg-user').value.trim().toLowerCase().replace(/\s+/g,'_');
   const p=document.getElementById('reg-pass').value;
-  const c=document.getElementById('reg-code').value.trim();
+  const c2=document.getElementById('reg-code').value.trim();
   const err=document.getElementById('reg-err');err.textContent='';
-  if(!u||!p||!c){err.textContent='Llena todos los campos.';return}
+  if(!u||!p||!c2){err.textContent='Llena todos los campos.';return}
   const btn=document.getElementById('reg-btn');btn.disabled=true;btn.textContent='Creando...';
   try{
-    const code=await db.getConfig('regCode');
-    if(c!==code){err.textContent='Código de acceso incorrecto.';return}
-    if(await db.getUser(u)){err.textContent='Ese usuario ya existe.';return}
-    await db.createUser(u,p,'user');
-    currentUser=u;currentUserRole='user';currentApodo=u;
+    const r=await db.register(u,p,c2);
+    authToken=r.token;
+    localStorage.setItem('lmx_token',r.token);
+    localStorage.setItem('lmx_user',r.username);
+    currentUser=r.username;currentUserRole=r.role;currentApodo=r.apodo;
     await loadAppData();startApp();
-  }catch(e){err.textContent='Error al registrar. Intenta de nuevo.';console.error(e)}
+  }catch(e){err.textContent=e.message;console.error(e)}
   finally{btn.disabled=false;btn.textContent='Crear cuenta'}
 }
 
 function doLogout(){
+  db.logout().catch(()=>{});
+  authToken=null;
+  localStorage.removeItem('lmx_token');
+  localStorage.removeItem('lmx_user');
   currentUser=null;currentUserRole=null;currentApodo=null;
   appData={jornadas:[],config:{},picks:[],users:[],teams:[],champions:[]};
   selectedJornada=null;
@@ -587,17 +600,13 @@ function toggleReg(){
 async function loadAppData(){
   showLoading(true,'Cargando datos...');
   try{
-    const [jorns,regCode,curJorn,picks,users,teams,champs]=await Promise.all([
-      db.getJornadas(),db.getConfig('regCode'),db.getConfig('currentJornada'),
-      db.getAllPicks(),db.getAllUsers(),db.getTeams(),db.getChampions()
-    ]);
-    appData.jornadas=jorns||[];
-    appData.config.regCode=regCode||'ligamx2026';
-    appData.config.currentJornada=curJorn;
-    appData.picks=picks||[];
-    appData.users=users||[];
-    appData.teams=teams||[];
-    appData.champions=champs||[];
+    const d=await db.getData();
+    appData.jornadas=d.jornadas||[];
+    appData.config=d.config||{};
+    appData.picks=d.picks||[];
+    appData.users=d.users||[];
+    appData.teams=d.teams||[];
+    appData.champions=d.champions||[];
     const me=appData.users.find(u=>u.username===currentUser);
     if(me)currentApodo=me.apodo||currentUser;
     checkJornadaReminders().catch(()=>{});
@@ -706,7 +715,7 @@ async function savePick(mid,choice,jn){
   const np=ex.pick===choice?null:choice;
   const kingStays=ex.king&&(np==='W'||np==='L');
   try{
-    await db.upsertPick(currentUser,jn,mid,np,kingStays);
+    await db.savePick(jn,mid,np,kingStays);
     const i=appData.picks.findIndex(p=>p.username===currentUser&&p.jornada===jn&&p.match_id===mid);
     const o={username:currentUser,jornada:jn,match_id:mid,pick:np,king:kingStays};
     if(i>=0)appData.picks[i]=o;else appData.picks.push(o);
@@ -724,9 +733,9 @@ async function toggleKing(mid,home,away,jn){
   try{
     if(nk){
       const others=appData.picks.filter(x=>x.username===currentUser&&x.jornada===jn&&x.match_id!==mid&&x.king&&x.pick);
-      for(const o of others){await db.upsertPick(o.username,o.jornada,o.match_id,o.pick,false);o.king=false;}
+      for(const o of others){await db.savePick(o.jornada,o.match_id,o.pick,false);o.king=false;}
     }
-    await db.upsertPick(currentUser,jn,mid,p.pick,nk);
+    await db.savePick(jn,mid,p.pick,nk);
     const i=appData.picks.findIndex(x=>x.username===currentUser&&x.jornada===jn&&x.match_id===mid);
     const o={username:currentUser,jornada:jn,match_id:mid,pick:p.pick,king:nk};
     if(i>=0)appData.picks[i]=o;else appData.picks.push(o);
@@ -912,7 +921,7 @@ async function saveApodo(){
   if(!v){msg.style.color='#ff5c72';msg.textContent='Escribe un apodo.';return;}
   const btn=document.getElementById('apodo-btn');btn.disabled=true;btn.textContent='Guardando...';
   try{
-    await db.updateApodo(currentUser,v);
+    await db.setApodo(v);
     currentApodo=v;
     document.getElementById('nav-username').textContent=v;
     document.getElementById('perfil-apodo-display').textContent=v;
@@ -932,9 +941,7 @@ async function savePassword(){
   if(nw.length<4){msg.style.color='#ff5c72';msg.textContent='Mínimo 4 caracteres.';return;}
   const btn=document.getElementById('pass-btn');btn.disabled=true;btn.textContent='Verificando...';
   try{
-    const u=await db.getUser(currentUser);
-    if(u.password!==cur){msg.style.color='#ff5c72';msg.textContent='Contraseña actual incorrecta.';return;}
-    await db.updatePassword(currentUser,nw);
+    await db.setPassword(cur,nw);
     msg.textContent='✓ Contraseña actualizada';
     document.getElementById('pass-current').value='';
     document.getElementById('pass-new').value='';
@@ -1112,15 +1119,11 @@ async function deleteMatch(jn,id){
 
 async function saveResult(jn,mid){
   const res=document.getElementById('res-sel-'+mid).value;
-  const j=appData.jornadas.find(x=>x.id===jn);if(!j)return;
-  const m=(j.matches||[]).find(x=>x.id===mid);if(!m)return;
-  const wasEmpty=!m.result;
-  m.result=res||null;
   try{
-    await db.upsertJornada(jn,j.matches);
-    if(res&&wasEmpty)notifyKingMisses(jn,mid,res).catch(()=>{});
+    await db.saveResult(jn,mid,res||null);
+    await loadAppData();
     renderAdmin();showToast(res?'Resultado guardado ✓':'Resultado limpiado');
-  }catch(e){showToast('Error guardando resultado');console.error(e);}
+  }catch(e){showToast('Error: '+e.message);console.error(e);}
 }
 
 async function addChampion(){
@@ -1170,7 +1173,7 @@ async function loadAndRenderNotifs(){
   const l=document.getElementById('notif-list');
   l.innerHTML='<div class="notif-empty">Cargando...</div>';
   try{
-    const ns=await db.getNotifications(currentUser);
+    const ns=await db.getNotifications();
     updateNotifBadge(ns.filter(n=>!n.read).length);
     if(!ns.length){l.innerHTML='<div class="notif-empty">Sin notificaciones 🎉</div>';return;}
     l.innerHTML='';
@@ -1186,7 +1189,7 @@ async function loadAndRenderNotifs(){
 
 async function refreshNotifBadge(){
   if(!currentUser)return;
-  try{const ns=await db.getNotifications(currentUser);updateNotifBadge(ns.filter(n=>!n.read).length);}catch(e){}
+  try{const ns=await db.getNotifications();updateNotifBadge(ns.filter(n=>!n.read).length);}catch(e){}
 }
 
 function updateNotifBadge(c){
@@ -1196,7 +1199,7 @@ function updateNotifBadge(c){
 }
 
 async function markAllRead(){
-  try{await db.markAllNotifsRead(currentUser);updateNotifBadge(0);loadAndRenderNotifs();}
+  try{await db.markAllNotifsRead();updateNotifBadge(0);loadAndRenderNotifs();}
   catch(e){showToast('Error al marcar leídas');}
 }
 
@@ -1226,31 +1229,13 @@ async function checkJornadaReminders(){
     const k24=`n24_${currentUser}_${j.id}`,k3=`n3_${currentUser}_${j.id}`;
     if(diffH<=25&&diffH>=23&&!localStorage.getItem(k24)){
       localStorage.setItem(k24,'1');
-      try{await db.insertNotification(currentUser,`⏰ Faltan ~24h para que cierre la Jornada ${j.id}. Te faltan ${missing} pick(s).`);refreshNotifBadge();}catch(e){}
+      try{await db.notifySelf(`⏰ Faltan ~24h para que cierre la Jornada ${j.id}. Te faltan ${missing} pick(s).`);refreshNotifBadge();}catch(e){}
     }
     if(diffH<=3.5&&diffH>=2.5&&!localStorage.getItem(k3)){
       localStorage.setItem(k3,'1');
-      try{await db.insertNotification(currentUser,`⚠️ ¡Últimas 3 horas! Te faltan ${missing} pick(s) en la Jornada ${j.id}.`);refreshNotifBadge();}catch(e){}
+      try{await db.notifySelf(`⚠️ ¡Últimas 3 horas! Te faltan ${missing} pick(s) en la Jornada ${j.id}.`);refreshNotifBadge();}catch(e){}
     }
   }
-}
-
-async function notifyKingMisses(jn,mid,res){
-  try{
-    const kings=appData.picks.filter(p=>p.jornada===jn&&p.match_id===mid&&p.king&&p.pick);
-    let match=null;
-    for(const j of appData.jornadas){const m=(j.matches||[]).find(x=>x.id===mid);if(m){match=m;break;}}
-    for(const p of kings){
-      if(p.pick===res)continue;
-      const team=p.pick==='W'?(match?match.home:'local'):(match?match.away:'visitante');
-      const apodo=getDisplayName(p.username);
-      await db.insertNotification(p.username,`💀 Fallaste tu Rey Pick con ${team} en la Jornada ${jn}. −1 punto.`);
-      for(const u of appData.users){
-        if(u.username!==p.username)
-          await db.insertNotification(u.username,`👑 ${apodo} falló su Rey Pick con ${team} en la Jornada ${jn}.`);
-      }
-    }
-  }catch(e){console.error('king notif error',e);}
 }
 
 function showToast(m){
