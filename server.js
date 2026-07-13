@@ -70,6 +70,20 @@ async function initSchema() {
     username TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+  await q(`CREATE TABLE IF NOT EXISTS special_questions (
+    id BIGSERIAL PRIMARY KEY,
+    question TEXT NOT NULL,
+    options JSONB DEFAULT '[]',
+    points INT DEFAULT 1,
+    correct_answer TEXT,
+    sort_order INT DEFAULT 0
+  )`);
+  await q(`CREATE TABLE IF NOT EXISTS special_answers (
+    username TEXT,
+    question_id BIGINT,
+    answer TEXT,
+    PRIMARY KEY (username, question_id)
+  )`);
 
   // Semillas
   const admins = await q(`SELECT username FROM users WHERE role='admin' LIMIT 1`);
@@ -82,6 +96,8 @@ async function initSchema() {
   await q(`INSERT INTO config (key, value) VALUES ('regCode','ligamx2026')
            ON CONFLICT (key) DO NOTHING`);
   await q(`INSERT INTO config (key, value) VALUES ('currentJornada', NULL)
+           ON CONFLICT (key) DO NOTHING`);
+  await q(`INSERT INTO config (key, value) VALUES ('specialDeadline', NULL)
            ON CONFLICT (key) DO NOTHING`);
 
   console.log('✓ Base de datos lista');
@@ -153,17 +169,30 @@ app.post('/api/logout', auth, wrap(async (req, res) => {
 
 // ---------- DATOS ----------
 app.get('/api/data', auth, wrap(async (req, res) => {
-  const [jornadas, config, picks, users, teams, champions] = await Promise.all([
+  const [jornadas, config, picks, users, teams, champions, specialQuestions, specialAnswers] = await Promise.all([
     q(`SELECT id, matches FROM jornadas ORDER BY id::int`),
     q(`SELECT key, value FROM config`),
     q(`SELECT username, jornada, match_id, pick, king FROM picks`),
     q(`SELECT username, role, apodo FROM users ORDER BY username`),
     q(`SELECT name, logo_url FROM teams ORDER BY name`),
-    q(`SELECT * FROM champions ORDER BY id DESC`)
+    q(`SELECT * FROM champions ORDER BY id DESC`),
+    q(`SELECT * FROM special_questions ORDER BY sort_order, id`),
+    q(`SELECT username, question_id, answer FROM special_answers`)
   ]);
   const cfg = {};
   config.forEach(c => cfg[c.key] = c.value);
-  res.json({ jornadas, config: cfg, picks, users, teams, champions });
+
+  // Ocultar respuestas de otros hasta que cierre el plazo
+  const deadline = cfg.specialDeadline ? new Date(cfg.specialDeadline) : null;
+  const specialsLocked = deadline ? new Date() >= deadline : false;
+  const visibleAnswers = specialsLocked
+    ? specialAnswers
+    : specialAnswers.filter(a => a.username === req.user.username);
+
+  res.json({
+    jornadas, config: cfg, picks, users, teams, champions,
+    specialQuestions, specialAnswers: visibleAnswers, specialsLocked
+  });
 }));
 
 // ---------- PICKS ----------
@@ -189,6 +218,54 @@ app.post('/api/pick', auth, wrap(async (req, res) => {
            ON CONFLICT (username, jornada, match_id)
            DO UPDATE SET pick=EXCLUDED.pick, king=EXCLUDED.king`,
     [username, jornada, match_id, pick, !!king]);
+  res.json({ ok: true });
+}));
+
+// ---------- PREGUNTAS ESPECIALES ----------
+async function specialsAreLocked() {
+  const rows = await q(`SELECT value FROM config WHERE key='specialDeadline'`);
+  if (!rows.length || !rows[0].value) return false;
+  return new Date() >= new Date(rows[0].value);
+}
+
+app.post('/api/special/answer', auth, wrap(async (req, res) => {
+  const { question_id, answer } = req.body;
+  if (await specialsAreLocked()) {
+    return res.status(403).json({ error: 'Las preguntas especiales ya cerraron' });
+  }
+  const qq = await q(`SELECT correct_answer FROM special_questions WHERE id=$1`, [question_id]);
+  if (!qq.length) return res.status(404).json({ error: 'Pregunta no existe' });
+  if (qq[0].correct_answer) return res.status(403).json({ error: 'Esa pregunta ya fue calificada' });
+
+  await q(`INSERT INTO special_answers (username, question_id, answer)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (username, question_id)
+           DO UPDATE SET answer=EXCLUDED.answer`,
+    [req.user.username, question_id, answer]);
+  res.json({ ok: true });
+}));
+
+app.post('/api/admin/special', auth, adminOnly, wrap(async (req, res) => {
+  const question = String(req.body.question || '').trim();
+  const options = Array.isArray(req.body.options) ? req.body.options : [];
+  const points = parseInt(req.body.points, 10) || 1;
+  if (!question) return res.status(400).json({ error: 'Escribe la pregunta' });
+  if (options.length < 2) return res.status(400).json({ error: 'Necesitas al menos 2 opciones' });
+  await q(`INSERT INTO special_questions (question, options, points) VALUES ($1,$2,$3)`,
+    [question, JSON.stringify(options), points]);
+  res.json({ ok: true });
+}));
+
+app.post('/api/admin/special/correct', auth, adminOnly, wrap(async (req, res) => {
+  const { id, correct_answer } = req.body;
+  await q(`UPDATE special_questions SET correct_answer=$1 WHERE id=$2`,
+    [correct_answer || null, id]);
+  res.json({ ok: true });
+}));
+
+app.delete('/api/admin/special/:id', auth, adminOnly, wrap(async (req, res) => {
+  await q(`DELETE FROM special_answers WHERE question_id=$1`, [req.params.id]);
+  await q(`DELETE FROM special_questions WHERE id=$1`, [req.params.id]);
   res.json({ ok: true });
 }));
 

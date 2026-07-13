@@ -254,6 +254,42 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
   .admin-row input,.admin-row select,.admin-row button{width:100%;min-width:unset}
   .notif-panel{width:100vw}
 }
+
+/* TABLA GENERAL (matriz) */
+.table-toggle{display:flex;gap:6px;margin-bottom:1rem}
+.tt-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.78rem;padding:6px 14px;border-radius:7px;cursor:pointer;transition:all 0.15s}
+.tt-btn.active{background:var(--green);border-color:var(--green);color:#04150a;font-weight:700}
+.matrix-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.matrix{border-collapse:collapse;width:100%;font-size:0.8rem;white-space:nowrap}
+.matrix th{background:var(--green-dark);color:#eafff2;font-weight:700;font-size:0.72rem;padding:9px 8px;text-align:center;position:sticky;top:0;letter-spacing:0.3px}
+.matrix th.mx-player{text-align:left;left:0;z-index:3;background:var(--green-dark);min-width:105px}
+.matrix th.mx-total{background:var(--gold-dark);color:var(--gold)}
+.matrix th.mx-esp{background:#3d2a52;color:#d0a8f0}
+.matrix td{padding:8px;text-align:center;border-top:1px solid var(--border-soft);color:var(--text)}
+.matrix td.mx-player{text-align:left;position:sticky;left:0;background:var(--surface);font-weight:500;color:var(--green-glow);z-index:2}
+.matrix tr:hover td{background:var(--surface2)}
+.matrix tr:hover td.mx-player{background:var(--surface2)}
+.matrix tr.me td.mx-player{color:var(--gold)}
+.matrix tr.me td{background:rgba(0,180,81,0.06)}
+.matrix td.mx-total{font-weight:700;color:var(--gold);background:rgba(240,180,41,0.06)}
+.matrix td.mx-esp{color:#d0a8f0;background:rgba(160,100,220,0.06)}
+.mx-neg{color:#ff5c72}
+.mx-zero{color:var(--dim)}
+.mx-empty{color:var(--dim);opacity:0.4}
+
+/* PREGUNTAS ESPECIALES */
+.spec-card{background:var(--surface);border:1px solid var(--border-soft);border-radius:12px;margin:0 1.2rem 0.8rem;padding:1rem}
+.spec-q{font-size:0.95rem;font-weight:500;margin-bottom:0.3rem;line-height:1.4}
+.spec-pts{font-size:0.72rem;color:#d0a8f0;background:rgba(160,100,220,0.12);padding:2px 8px;border-radius:5px;display:inline-block;margin-bottom:0.8rem;font-weight:700}
+.spec-opts{display:flex;flex-direction:column;gap:6px}
+.spec-opt{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:10px 13px;border-radius:8px;cursor:pointer;text-align:left;transition:all 0.15s}
+.spec-opt:hover:not(:disabled){border-color:var(--muted);color:var(--text)}
+.spec-opt:disabled{cursor:default;opacity:0.5}
+.spec-opt.selected{background:rgba(160,100,220,0.18);border-color:#a064dc;color:#e0c8f8;font-weight:500}
+.spec-opt.correct{background:rgba(0,180,81,0.18);border-color:var(--green);color:var(--green-glow);font-weight:700}
+.spec-opt.wrong{background:rgba(228,0,43,0.15);border-color:var(--red);color:#ff8a9c}
+.spec-result{margin-top:0.8rem;padding-top:0.8rem;border-top:1px solid var(--border-soft);font-size:0.78rem}
+.spec-deadline{background:rgba(160,100,220,0.1);border:1px solid #5a3a7a;border-radius:10px;padding:0.65rem 0.85rem;margin:0 1.2rem 0.85rem;font-size:0.78rem;color:#d0a8f0}
 </style>
 </head>
 <body>
@@ -296,7 +332,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <button class="btn-sm" onclick="showTab('picks')" id="tab-picks">Picks</button>
       <button class="btn-sm" onclick="showTab('standings')" id="tab-standings">Tabla</button>
       <button class="btn-sm" onclick="showTab('others')" id="tab-others">Ver Picks</button>
-      <button class="btn-sm" onclick="showTab('champions')" id="tab-champions">🏆 Campeones</button>
+      <button class="btn-sm" onclick="showTab('specials')" id="tab-specials">⭐ Especiales</button>
+      <button class="btn-sm" onclick="showTab('champions')" id="tab-champions">🏆 Salón de la Fama</button>
       <button class="btn-sm" onclick="showTab('perfil')" id="tab-perfil">Perfil</button>
       <button class="btn-sm" id="tab-admin" onclick="showTab('admin')" style="display:none">Admin</button>
       <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()">🔔<span class="notif-badge" id="notif-badge" style="display:none">0</span></button>
@@ -321,8 +358,13 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     <!-- STANDINGS -->
     <div id="tab-standings-view" style="display:none">
       <div class="stand-wrap">
-        <div class="section-title">Tabla General</div>
+        <div class="section-title">Tabla</div>
+        <div class="table-toggle">
+          <button class="tt-btn active" id="tt-resumen" onclick="setTableView('resumen')">Resumen</button>
+          <button class="tt-btn" id="tt-general" onclick="setTableView('general')">General</button>
+        </div>
         <div id="standings-list"></div>
+        <div id="standings-matrix" style="display:none"></div>
       </div>
     </div>
 
@@ -333,6 +375,16 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
         <div class="picks-h-sub" id="others-lock-note"></div>
       </div>
       <div id="others-content" style="padding:0 1.2rem 1rem"></div>
+    </div>
+
+    <!-- SPECIALS -->
+    <div id="tab-specials-view" style="display:none">
+      <div class="picks-header">
+        <div class="picks-h-title">⭐ Preguntas Especiales</div>
+        <div class="picks-h-sub" id="specials-sub"></div>
+      </div>
+      <div class="spec-deadline" id="specials-deadline" style="display:none"></div>
+      <div id="specials-list"></div>
     </div>
 
     <!-- CHAMPIONS -->
@@ -439,7 +491,29 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
         </div>
 
         <div class="admin-section">
-          <div class="admin-title">🏆 Campeones</div>
+          <div class="admin-title">⭐ Preguntas Especiales</div>
+          <div class="admin-card">
+            <div class="admin-row">
+              <input id="spec-deadline" type="datetime-local"/>
+              <button class="btn-add" onclick="saveSpecDeadline()">Fijar cierre</button>
+            </div>
+            <div class="notice" id="spec-deadline-now"></div>
+            <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border-soft)">
+              <div class="admin-row">
+                <input id="spec-question" placeholder="Pregunta (ej. ¿Quién será campeón?)"/>
+              </div>
+              <div class="admin-row">
+                <input id="spec-options" placeholder="Opciones separadas por coma: América, Rayados, Tigres"/>
+                <input id="spec-points" type="number" min="1" value="3" placeholder="Puntos"/>
+                <button class="btn-add" onclick="addSpecial()">Agregar</button>
+              </div>
+            </div>
+            <div id="admin-specials-list" class="item-list"></div>
+          </div>
+        </div>
+
+        <div class="admin-section">
+          <div class="admin-title">🏆 Salón de la Fama</div>
           <div class="admin-card">
             <div class="admin-row">
               <input id="champ-season" placeholder="Temporada (ej. Apertura 2025)"/>
@@ -513,11 +587,16 @@ const db = {
   addChampion:(season,champion,runner_up,last_place) => api('POST','/admin/champion',{season,champion,runner_up,last_place}),
   deleteChampion:(id)                  => api('DELETE','/admin/champion/'+id),
   deleteUser: (username)               => api('DELETE','/admin/user/'+encodeURIComponent(username)),
+  answerSpecial:(question_id,answer)   => api('POST','/special/answer',{question_id,answer}),
+  addSpecial: (question,options,points)=> api('POST','/admin/special',{question,options,points}),
+  setSpecialCorrect:(id,correct_answer)=> api('POST','/admin/special/correct',{id,correct_answer}),
+  deleteSpecial:(id)                   => api('DELETE','/admin/special/'+id),
 };
 
 // ===== STATE =====
 let currentUser=null,currentUserRole=null,currentApodo=null;
-let appData={jornadas:[],config:{},picks:[],users:[],teams:[],champions:[]};
+let appData={jornadas:[],config:{},picks:[],users:[],teams:[],champions:[],specialQuestions:[],specialAnswers:[],specialsLocked:false};
+let tableView='resumen';
 let selectedJornada=null,activeTab='picks',notifOpen=false;
 
 function showLoading(s,m){document.getElementById('loading-overlay').style.display=s?'flex':'none';if(m)document.getElementById('loading-text').textContent=m;}
@@ -582,7 +661,7 @@ function doLogout(){
   localStorage.removeItem('lmx_token');
   localStorage.removeItem('lmx_user');
   currentUser=null;currentUserRole=null;currentApodo=null;
-  appData={jornadas:[],config:{},picks:[],users:[],teams:[],champions:[]};
+  appData={jornadas:[],config:{},picks:[],users:[],teams:[],champions:[],specialQuestions:[],specialAnswers:[],specialsLocked:false};
   selectedJornada=null;
   document.getElementById('login-user').value='';
   document.getElementById('login-pass').value='';
@@ -607,6 +686,9 @@ async function loadAppData(){
     appData.users=d.users||[];
     appData.teams=d.teams||[];
     appData.champions=d.champions||[];
+    appData.specialQuestions=d.specialQuestions||[];
+    appData.specialAnswers=d.specialAnswers||[];
+    appData.specialsLocked=!!d.specialsLocked;
     const me=appData.users.find(u=>u.username===currentUser);
     if(me)currentApodo=me.apodo||currentUser;
     checkJornadaReminders().catch(()=>{});
@@ -629,7 +711,7 @@ function showScreen(id){
 
 async function showTab(tab){
   activeTab=tab;
-  ['picks','standings','others','champions','perfil','admin'].forEach(t=>{
+  ['picks','standings','others','specials','champions','perfil','admin'].forEach(t=>{
     const v=document.getElementById('tab-'+t+'-view');
     if(v)v.style.display=t===tab?'block':'none';
     const b=document.getElementById('tab-'+t);
@@ -641,6 +723,7 @@ async function showTab(tab){
   if(tab==='picks')renderPicks();
   if(tab==='standings')renderStandings();
   if(tab==='others')renderOthers();
+  if(tab==='specials')renderSpecials();
   if(tab==='champions')renderChampions();
   if(tab==='perfil')renderPerfil();
   if(tab==='admin')renderAdmin();
@@ -805,8 +888,11 @@ function calcUserPoints(u){
 }
 
 function renderStandings(){
+  if(tableView==='general'){setTableView('general');return;}
   const list=document.getElementById('standings-list');
-  const scored=appData.users.map(u=>({u:u.username,...calcUserPoints(u.username)})).sort((a,b)=>b.pts-a.pts||b.correct-a.correct);
+  const scored=appData.users.map(u=>({u:u.username,...calcUserPoints(u.username),esp:specialPoints(u.username)}))
+    .map(s=>({...s,pts:s.pts+s.esp}))
+    .sort((a,b)=>b.pts-a.pts||b.correct-a.correct);
   list.innerHTML='';
   if(!scored.length){list.innerHTML='<div class="empty-state"><span class="icon">👥</span>Sin usuarios aún.</div>';return;}
   scored.forEach((s,i)=>{
@@ -815,11 +901,198 @@ function renderStandings(){
     r.innerHTML=`<span class="stand-rank">${i+1}</span>
       <div style="flex:1">
         <div class="stand-name">${esc(getDisplayName(s.u))}${s.u===currentUser?' <span style="font-size:0.66rem;color:var(--muted);font-weight:400">(tú)</span>':''}</div>
-        <div class="stand-detail">${s.correct}/${s.total} aciertos · ♛ ${s.kingHit}/${s.kingUsed}</div>
+        <div class="stand-detail">${s.correct}/${s.total} aciertos · ♛ ${s.kingHit}/${s.kingUsed}${s.esp?' · ⭐ '+s.esp:''}</div>
       </div>
       <span class="stand-pts">${s.pts}</span>`;
     list.appendChild(r);
   });
+}
+
+
+// ===== PUNTAJE POR JORNADA / ESPECIALES =====
+function jornadaPoints(username,jid){
+  const j=appData.jornadas.find(x=>x.id===jid);
+  if(!j)return null;
+  const ms=j.matches||[];
+  const scored=ms.filter(m=>m.result);
+  if(!scored.length)return null;
+  let pts=0;
+  scored.forEach(m=>{
+    const p=appData.picks.find(x=>x.username===username&&x.jornada===jid&&x.match_id===m.id);
+    if(!p||!p.pick)return;
+    if(p.pick===m.result)pts++;
+    if(p.king)pts+=p.pick===m.result?1:-1;
+  });
+  return pts;
+}
+
+function specialPoints(username){
+  let pts=0;
+  appData.specialQuestions.forEach(qq=>{
+    if(!qq.correct_answer)return;
+    const a=appData.specialAnswers.find(x=>x.username===username&&String(x.question_id)===String(qq.id));
+    if(a&&a.answer===qq.correct_answer)pts+=(qq.points||1);
+  });
+  return pts;
+}
+
+function totalPoints(username){
+  let t=specialPoints(username);
+  appData.jornadas.forEach(j=>{
+    const p=jornadaPoints(username,j.id);
+    if(p!==null)t+=p;
+  });
+  return t;
+}
+
+// ===== TABLA: TOGGLE =====
+function setTableView(v){
+  tableView=v;
+  document.getElementById('tt-resumen').classList.toggle('active',v==='resumen');
+  document.getElementById('tt-general').classList.toggle('active',v==='general');
+  document.getElementById('standings-list').style.display=v==='resumen'?'block':'none';
+  document.getElementById('standings-matrix').style.display=v==='general'?'block':'none';
+  if(v==='general')renderMatrix();
+}
+
+function renderMatrix(){
+  const cont=document.getElementById('standings-matrix');
+  if(!appData.users.length){cont.innerHTML='<div class="empty-state"><span class="icon">👥</span>Sin usuarios.</div>';return;}
+  const jorns=appData.jornadas.slice();
+  const rows=appData.users.map(u=>({
+    u:u.username,
+    name:getDisplayName(u.username),
+    per:jorns.map(j=>jornadaPoints(u.username,j.id)),
+    esp:specialPoints(u.username),
+    total:totalPoints(u.username)
+  })).sort((a,b)=>b.total-a.total);
+
+  const cell=v=>{
+    if(v===null)return '<td class="mx-empty">·</td>';
+    if(v<0)return `<td class="mx-neg">${v}</td>`;
+    if(v===0)return '<td class="mx-zero">0</td>';
+    return `<td>${v}</td>`;
+  };
+
+  cont.innerHTML=`
+    <div class="matrix-scroll">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th class="mx-player">LIGA MX</th>
+            ${jorns.map(j=>`<th>J${j.id}</th>`).join('')}
+            <th class="mx-esp">ESP</th>
+            <th class="mx-total">TOTAL</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r=>`
+            <tr class="${r.u===currentUser?'me':''}">
+              <td class="mx-player">${esc(r.name)}</td>
+              ${r.per.map(cell).join('')}
+              <td class="mx-esp">${r.esp}</td>
+              <td class="mx-total">${r.total}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="notice">· = jornada sin resultados todavía. Los negativos son Rey Picks fallados.</div>`;
+}
+
+// ===== PREGUNTAS ESPECIALES =====
+function specialsDeadline(){
+  const d=appData.config.specialDeadline;
+  return d?new Date(d):null;
+}
+
+function renderSpecials(){
+  const qs=appData.specialQuestions;
+  const dl=specialsDeadline();
+  const locked=appData.specialsLocked;
+  const sub=document.getElementById('specials-sub');
+  const dlBar=document.getElementById('specials-deadline');
+  const list=document.getElementById('specials-list');
+
+  sub.textContent=locked?'🔒 Cerradas — respuestas reveladas':'✏️ Abiertas para responder';
+
+  if(dl){
+    dlBar.style.display='block';
+    dlBar.innerHTML=locked
+      ? `🔒 Cerraron el ${fmtDate(dl)}`
+      : `⏳ Tienes hasta el <b>${fmtDate(dl)}</b> para responder. Después ya no se pueden cambiar.`;
+  }else{
+    dlBar.style.display='none';
+  }
+
+  if(!qs.length){
+    list.innerHTML='<div class="empty-state"><span class="icon">⭐</span>Aún no hay preguntas especiales.<br><span style="font-size:0.78rem;color:var(--dim)">El admin puede agregarlas desde el panel.</span></div>';
+    return;
+  }
+
+  list.innerHTML='';
+  qs.forEach(qq=>{
+    const opts=qq.options||[];
+    const mine=appData.specialAnswers.find(a=>a.username===currentUser&&String(a.question_id)===String(qq.id));
+    const myAns=mine?mine.answer:null;
+    const graded=!!qq.correct_answer;
+    const dis=locked||graded;
+
+    const card=document.createElement('div');
+    card.className='spec-card';
+
+    let others='';
+    if(locked){
+      const rows=appData.specialAnswers
+        .filter(a=>String(a.question_id)===String(qq.id)&&a.username!==currentUser);
+      if(rows.length){
+        others=`<div class="spec-result"><span style="color:var(--muted)">Respuestas: </span>`
+          + rows.map(a=>{
+              const ok=graded?(a.answer===qq.correct_answer):null;
+              const col=ok===null?'var(--muted)':ok?'var(--green-glow)':'#ff8a9c';
+              return `<span style="color:${col}">${esc(getDisplayName(a.username))} → ${esc(a.answer)}</span>`;
+            }).join(' · ')
+          + `</div>`;
+      }
+    }
+
+    let resultLine='';
+    if(graded){
+      const hit=myAns===qq.correct_answer;
+      resultLine=`<div class="spec-result">
+        <span style="color:var(--muted)">Correcta: </span><b style="color:var(--green-glow)">${esc(qq.correct_answer)}</b>
+        ${myAns?` · <span style="color:${hit?'var(--green-glow)':'#ff8a9c'};font-weight:700">${hit?'+'+(qq.points||1)+' pts':'0 pts'}</span>`
+               :` · <span style="color:var(--dim)">No respondiste</span>`}
+      </div>`;
+    }
+
+    card.innerHTML=`
+      <div class="spec-q">${esc(qq.question)}</div>
+      <span class="spec-pts">Vale ${qq.points||1} pts</span>
+      <div class="spec-opts">
+        ${opts.map(o=>{
+          let cls='spec-opt';
+          if(graded){
+            if(o===qq.correct_answer)cls+=' correct';
+            else if(o===myAns)cls+=' wrong';
+          }else if(o===myAns)cls+=' selected';
+          return `<button class="${cls}" ${dis?'disabled':''} onclick="answerSpecial(${qq.id},'${esc(o).replace(/'/g,"\\'")}')">${esc(o)}</button>`;
+        }).join('')}
+      </div>
+      ${resultLine}
+      ${others}`;
+    list.appendChild(card);
+  });
+}
+
+async function answerSpecial(qid,answer){
+  try{
+    await db.answerSpecial(qid,answer);
+    const i=appData.specialAnswers.findIndex(a=>a.username===currentUser&&String(a.question_id)===String(qid));
+    const o={username:currentUser,question_id:qid,answer};
+    if(i>=0)appData.specialAnswers[i]=o;else appData.specialAnswers.push(o);
+    renderSpecials();
+    showToast('Respuesta guardada ✓');
+  }catch(e){showToast(e.message);}
 }
 
 // ===== OTHERS =====
@@ -968,7 +1241,11 @@ function renderAdmin(){
     const ph=document.createElement('option');ph.value='';ph.textContent=id==='match-home'?'Local...':'Visitante...';s.appendChild(ph);
     appData.teams.forEach(t=>{const o=document.createElement('option');o.value=t.name;o.textContent=t.name;s.appendChild(o);});
   });
-  renderAdminTeams();renderAdminMatches();renderAdminResults();renderAdminChamps();renderAdminUsers();
+  const dl=appData.config.specialDeadline;
+  document.getElementById('spec-deadline-now').textContent=dl
+    ? 'Cierre actual: '+fmtDate(dl)
+    : 'Sin fecha de cierre — las preguntas siguen abiertas.';
+  renderAdminTeams();renderAdminMatches();renderAdminResults();renderAdminSpecials();renderAdminChamps();renderAdminUsers();
 }
 
 function renderAdminTeams(){
@@ -1021,6 +1298,72 @@ function renderAdminResults(){
     });
   });
   if(!any)l.innerHTML='<div style="font-size:0.78rem;color:var(--muted)">Agrega partidos primero.</div>';
+}
+
+function renderAdminSpecials(){
+  const l=document.getElementById('admin-specials-list');l.innerHTML='';
+  if(!appData.specialQuestions.length){
+    l.innerHTML='<div style="font-size:0.78rem;color:var(--muted);padding:0.5rem 0">Sin preguntas especiales.</div>';
+    return;
+  }
+  appData.specialQuestions.forEach(qq=>{
+    const opts=qq.options||[];
+    const r=document.createElement('div');r.className='item-row';
+    r.innerHTML=`
+      <span class="item-label" style="flex-direction:column;align-items:flex-start;gap:2px">
+        <span>⭐ ${esc(qq.question)} <span style="color:#d0a8f0;font-size:0.72rem">(${qq.points||1} pts)</span></span>
+        <span style="color:var(--dim);font-size:0.7rem">${opts.map(esc).join(' · ')}</span>
+      </span>
+      <select class="result-sel" id="spec-sel-${qq.id}">
+        <option value="">— sin calificar</option>
+        ${opts.map(o=>`<option value="${esc(o)}" ${qq.correct_answer===o?'selected':''}>${esc(o)}</option>`).join('')}
+      </select>
+      <button class="btn-save-result" onclick="saveSpecCorrect(${qq.id})">Guardar</button>
+      <button class="btn-danger" onclick="deleteSpecial(${qq.id})">Eliminar</button>`;
+    l.appendChild(r);
+  });
+}
+
+async function saveSpecDeadline(){
+  const v=document.getElementById('spec-deadline').value;
+  if(!v){showToast('Elige una fecha');return}
+  try{
+    await db.setConfig('specialDeadline',new Date(v).toISOString());
+    await loadAppData();renderAdmin();showToast('Cierre fijado ✓');
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+async function addSpecial(){
+  const question=document.getElementById('spec-question').value.trim();
+  const raw=document.getElementById('spec-options').value.trim();
+  const points=parseInt(document.getElementById('spec-points').value,10)||1;
+  const options=raw.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!question){showToast('Escribe la pregunta');return}
+  if(options.length<2){showToast('Necesitas al menos 2 opciones separadas por coma');return}
+  try{
+    await db.addSpecial(question,options,points);
+    await loadAppData();
+    document.getElementById('spec-question').value='';
+    document.getElementById('spec-options').value='';
+    renderAdmin();showToast('Pregunta agregada ⭐');
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+async function saveSpecCorrect(id){
+  const v=document.getElementById('spec-sel-'+id).value;
+  try{
+    await db.setSpecialCorrect(id,v||null);
+    await loadAppData();renderAdmin();
+    showToast(v?'Respuesta correcta guardada ✓':'Calificación limpiada');
+  }catch(e){showToast('Error: '+e.message);}
+}
+
+async function deleteSpecial(id){
+  if(!confirm('¿Eliminar esta pregunta y todas sus respuestas?'))return;
+  try{
+    await db.deleteSpecial(id);
+    await loadAppData();renderAdmin();showToast('Pregunta eliminada');
+  }catch(e){showToast('Error: '+e.message);}
 }
 
 function renderAdminChamps(){
