@@ -796,15 +796,39 @@ function jornadaStats(jid){
   const closed=ms.filter(matchClosed).length;
   return{total:ms.length,closed,open:ms.length-closed};
 }
-function getKingUsedTeams(){
+function kingUsedTeamsFor(username,excludeJornada){
   const used=new Set();
-  appData.picks.filter(p=>p.username===currentUser&&p.king&&p.pick).forEach(p=>{
+  appData.picks.filter(p=>p.username===username&&p.king&&p.pick).forEach(p=>{
+    if(excludeJornada&&p.jornada===excludeJornada)return;
     for(const j of appData.jornadas){
       const m=(j.matches||[]).find(x=>x.id===p.match_id);
       if(m){used.add(p.pick==='W'?m.home:m.away);break;}
     }
   });
   return used;
+}
+function getKingUsedTeams(){return kingUsedTeamsFor(currentUser);}
+
+// ¿Ya cerraron TODOS los partidos de la jornada?
+function jornadaFullyClosed(jid){
+  const ms=getJornadaMatches(jid);
+  return ms.length>0&&ms.every(matchClosed);
+}
+
+// ¿Hubo al menos un partido donde SÍ se podía poner el Rey?
+// (Si todos los equipos de la jornada ya estaban quemados, no era posible.)
+function couldPlaceKing(username,jid){
+  const ms=getJornadaMatches(jid);
+  const used=kingUsedTeamsFor(username,jid);
+  return ms.some(m=>!used.has(m.home)||!used.has(m.away));
+}
+
+// −1 si la jornada ya cerró por completo y nunca usó su Rey.
+// Sin excepciones: administrar los equipos disponibles es parte del juego.
+function kingPenalty(username,jid){
+  if(!jornadaFullyClosed(jid))return 0;
+  const usedKing=appData.picks.some(p=>p.username===username&&p.jornada===jid&&p.king&&p.pick);
+  return usedKing?0:-1;
 }
 function calcPts(pick,result){
   if(!pick.pick)return 0;
@@ -912,7 +936,22 @@ function renderPicks(){
   else if(st.closed===0)sub.textContent='✏️ '+st.open+' partido(s) abiertos';
   else sub.textContent='✏️ '+st.open+' abiertos · 🔒 '+st.closed+' cerrados';
   const used=getKingUsedTeams();
-  document.getElementById('king-info-bar').innerHTML='♛ <b>Rey Pick</b> · +1 si aciertas, −1 si fallas. Una vez por equipo en toda la temporada.'+(used.size?'<br>Equipos usados: '+[...used].map(esc).join(', '):'');
+  const bar=document.getElementById('king-info-bar');
+  const tieneRey=appData.picks.some(p=>p.username===currentUser&&p.jornada===jn&&p.king&&p.pick);
+  let aviso='';
+  if(jn&&st.total){
+    if(jornadaFullyClosed(jn)){
+      if(kingPenalty(currentUser,jn)<0)
+        aviso='<br><span style="color:#ff5c72;font-weight:700">⚠ No usaste tu Rey en esta jornada: −1 punto.</span>';
+    }else if(!tieneRey){
+      if(!couldPlaceKing(currentUser,jn))
+        aviso='<br><span style="color:#ff5c72;font-weight:700">⚠ Ya usaste el Rey con todos los equipos de esta jornada. No podrás ponerlo: −1 punto.</span>';
+      else
+        aviso='<br><span style="color:var(--amber);font-weight:700">⚠ Aún no pones tu Rey. Si la jornada cierra sin usarlo, es −1 punto.</span>';
+    }
+  }
+  bar.innerHTML='♛ <b>Rey Pick</b> · +1 si aciertas, −1 si fallas, −1 si no lo usas. Una vez por equipo en toda la temporada.'
+    +(used.size?'<br>Equipos usados: '+[...used].map(esc).join(', '):'')+aviso;
   const list=document.getElementById('matches-list');list.innerHTML='';
   if(!jn||!matches.length){list.innerHTML='<div class="empty-state"><span class="icon">⚽</span>Sin partidos en esta jornada.</div>';return;}
   matches.forEach(m=>{
@@ -954,7 +993,7 @@ function renderPicks(){
 
 // ===== STANDINGS =====
 function calcUserPoints(u){
-  let pts=0,correct=0,total=0,kingUsed=0,kingHit=0;
+  let pts=0,correct=0,total=0,kingUsed=0,kingHit=0,kingMissed=0;
   appData.picks.filter(p=>p.username===u).forEach(p=>{
     let res=null;
     for(const j of appData.jornadas){const m=(j.matches||[]).find(x=>x.id===p.match_id);if(m){res=m.result;break;}}
@@ -963,7 +1002,12 @@ function calcUserPoints(u){
     if(p.pick===res){pts++;correct++;}
     if(p.king){kingUsed++;if(p.pick===res){pts++;kingHit++;}else pts--;}
   });
-  return{pts,correct,total,kingUsed,kingHit};
+  // Castigo por no usar el Rey en jornadas ya cerradas
+  appData.jornadas.forEach(j=>{
+    const pen=kingPenalty(u,j.id);
+    if(pen){pts+=pen;kingMissed++;}
+  });
+  return{pts,correct,total,kingUsed,kingHit,kingMissed};
 }
 
 function renderStandings(){
@@ -980,7 +1024,7 @@ function renderStandings(){
     r.innerHTML=`<span class="stand-rank">${i+1}</span>
       <div style="flex:1">
         <div class="stand-name">${esc(getDisplayName(s.u))}${s.u===currentUser?' <span style="font-size:0.66rem;color:var(--muted);font-weight:400">(tú)</span>':''}</div>
-        <div class="stand-detail">${s.correct}/${s.total} aciertos · ♛ ${s.kingHit}/${s.kingUsed}${s.esp?' · ⭐ '+s.esp:''}</div>
+        <div class="stand-detail">${s.correct}/${s.total} aciertos · ♛ ${s.kingHit}/${s.kingUsed}${s.kingMissed?' · <span style="color:#ff5c72">−'+s.kingMissed+' sin Rey</span>':''}${s.esp?' · ⭐ '+s.esp:''}</div>
       </div>
       <span class="stand-pts">${s.pts}</span>`;
     list.appendChild(r);
@@ -994,7 +1038,8 @@ function jornadaPoints(username,jid){
   if(!j)return null;
   const ms=j.matches||[];
   const scored=ms.filter(m=>m.result);
-  if(!scored.length)return null;
+  const pen=kingPenalty(username,jid);
+  if(!scored.length&&!pen)return null;
   let pts=0;
   scored.forEach(m=>{
     const p=appData.picks.find(x=>x.username===username&&x.jornada===jid&&x.match_id===m.id);
@@ -1002,7 +1047,7 @@ function jornadaPoints(username,jid){
     if(p.pick===m.result)pts++;
     if(p.king)pts+=p.pick===m.result?1:-1;
   });
-  return pts;
+  return pts+pen;
 }
 
 function specialPoints(username){
