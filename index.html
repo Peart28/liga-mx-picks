@@ -311,6 +311,37 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
   .hof-sum-row{flex-direction:column;align-items:flex-start;gap:2px}
   .hof-sum-season{min-width:unset;font-size:0.72rem}
 }
+
+/* VER PICKS — MATRIZ */
+.vp-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.vp{border-collapse:collapse;width:100%;font-size:0.78rem;white-space:nowrap}
+.vp th{background:var(--surface2);color:var(--text);font-weight:700;font-size:0.7rem;padding:9px 8px;text-align:center;border-bottom:1px solid var(--border);letter-spacing:0.2px}
+.vp th.vp-match{text-align:left;position:sticky;left:0;z-index:3;background:var(--surface2);min-width:150px;border-right:1px solid var(--border)}
+.vp th.vp-cnt{background:#1a2430;color:#8fb4d0;font-size:0.65rem;padding:9px 5px;min-width:26px}
+.vp th.vp-res{background:var(--gold-dark);color:var(--gold);min-width:95px}
+.vp th.vp-user{min-width:95px;color:var(--muted)}
+.vp th.vp-user.me{color:var(--green-glow)}
+.vp td{padding:7px 8px;text-align:center;border-top:1px solid var(--border-soft);color:var(--muted)}
+.vp td.vp-match{text-align:left;position:sticky;left:0;background:var(--surface);z-index:2;border-right:1px solid var(--border);color:var(--text)}
+.vp tr:hover td{background:var(--surface2)}
+.vp tr:hover td.vp-match{background:var(--surface2)}
+.vp-teams{display:flex;flex-direction:column;gap:1px;line-height:1.35}
+.vp-h{font-weight:500;font-size:0.78rem;color:var(--text)}
+.vp-a{font-size:0.72rem;color:var(--muted)}
+.vp td.vp-cnt{color:#8fb4d0;font-size:0.75rem;background:rgba(60,110,150,0.06);font-weight:500}
+.vp td.vp-cnt.zero{color:var(--dim);opacity:0.45}
+.vp td.vp-res{font-weight:700;color:var(--gold);background:rgba(240,180,41,0.07)}
+.vp-pick{display:inline-flex;align-items:center;gap:3px;max-width:92px}
+.vp-pick span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vp-hit{color:var(--gold);font-weight:700}
+.vp-miss{color:var(--dim)}
+.vp-pend{color:var(--text)}
+.vp-none{color:var(--dim);opacity:0.4}
+.vp-crown{color:var(--gold);font-size:10px;flex-shrink:0}
+.vp-crown.miss{color:#6b5a2a}
+.vp-lock{color:var(--dim);opacity:0.5;font-size:0.85rem}
+.vp-legend{font-size:0.72rem;color:var(--dim);margin-top:0.7rem;line-height:1.6}
+.vp-legend b{color:var(--gold)}
 </style>
 </head>
 <body>
@@ -1145,18 +1176,19 @@ async function answerSpecial(qid,answer){
 // ===== OTHERS =====
 function renderOthers(){
   const jn=selectedJornada;
-  document.getElementById('others-jornada-title').textContent='Picks de todos'+(jn?' · J'+jn:'');
+  document.getElementById('others-jornada-title').textContent='Picks de todos'+(jn?' · Jornada '+jn:'');
   const note=document.getElementById('others-lock-note');
   const cont=document.getElementById('others-content');
   const matches=getJornadaMatches(jn);
-  const abiertos=matches.filter(m=>!matchClosed(m));
-  const cerrados=matches.filter(matchClosed);
 
   if(!matches.length){
     note.textContent='';
     cont.innerHTML='<div class="empty-state"><span class="icon">⚽</span>Sin partidos en esta jornada.</div>';
     return;
   }
+
+  const cerrados=matches.filter(matchClosed);
+  const abiertos=matches.filter(m=>!matchClosed(m));
 
   if(!cerrados.length){
     note.textContent='🔒 Cada partido se revela cuando arranca.';
@@ -1170,59 +1202,80 @@ function renderOthers(){
   note.textContent='✅ '+cerrados.length+' de '+matches.length+' partidos revelados';
   note.style.color='var(--green-glow)';
 
-  const users=appData.users.map(u=>u.username).filter(u=>u!==currentUser);
-  cont.innerHTML='';
+  // Yo primero, luego los demás
+  const users=[currentUser,...appData.users.map(u=>u.username).filter(u=>u!==currentUser)];
 
-  cerrados.forEach(m=>{
-    const card=document.createElement('div');
-    card.className='other-card';
-    card.style.marginBottom='0.8rem';
+  const pickOf=(u,m)=>appData.picks.find(x=>x.username===u&&x.jornada===jn&&x.match_id===m.id&&x.pick);
 
-    let rows='';
-    users.forEach(u=>{
-      const p=appData.picks.find(x=>x.username===u&&x.jornada===jn&&x.match_id===m.id&&x.pick);
-      const pv=p?p.pick:null;
-      let cls='';
-      if(m.result&&pv)cls=pv===m.result?'op-W':'op-L';
-      else if(pv)cls='op-'+pv;
-      rows+=`<div class="other-pick-row">
-        <span class="other-teams-lbl">${esc(getDisplayName(u))}</span>
-        ${p&&p.king?'<span class="op-crown">♛</span>':''}
-        <span class="other-pick-val ${pv?'op-'+pv:''}">${esc(pickTeam(m,pv))}</span>
-      </div>`;
-    });
+  const rows=matches.map(m=>{
+    const open=!matchClosed(m);
+    const res=m.result;
 
-    const mine=appData.picks.find(x=>x.username===currentUser&&x.jornada===jn&&x.match_id===m.id&&x.pick);
-    if(mine){
-      rows=`<div class="other-pick-row" style="border-bottom:1px solid var(--green-dark)">
-        <span class="other-teams-lbl" style="color:var(--green-glow);font-weight:500">Tú</span>
-        ${mine.king?'<span class="op-crown">♛</span>':''}
-        <span class="other-pick-val op-${mine.pick}">${esc(pickTeam(m,mine.pick))}</span>
-      </div>`+rows;
+    // Conteo L / E / V (solo si ya se reveló)
+    let cnt={W:0,T:0,L:0};
+    if(!open){
+      users.forEach(u=>{const p=pickOf(u,m);if(p)cnt[p.pick]=(cnt[p.pick]||0)+1;});
     }
+    const cntCell=v=>open
+      ? '<td class="vp-cnt zero">·</td>'
+      : `<td class="vp-cnt ${v===0?'zero':''}">${v}</td>`;
 
-    card.innerHTML=`
-      <div class="other-name" style="display:flex;align-items:center;gap:7px;justify-content:space-between">
-        <span>${esc(m.home)} vs ${esc(m.away)}</span>
-        ${m.result?`<span class="res-chip res-${m.result}" style="font-size:0.65rem">${esc(pickTeam(m,m.result))}</span>`
-                  :'<span style="font-size:0.65rem;color:var(--amber);font-weight:400">en juego</span>'}
-      </div>
-      ${rows||'<div style="font-size:0.75rem;color:var(--dim)">Nadie pickeó este partido</div>'}`;
-    cont.appendChild(card);
-  });
+    // Celda de cada jugador
+    const cells=users.map(u=>{
+      if(open)return '<td><span class="vp-lock">🔒</span></td>';
+      const p=pickOf(u,m);
+      if(!p)return '<td><span class="vp-none">—</span></td>';
+      let cls='vp-pend';
+      if(res)cls=p.pick===res?'vp-hit':'vp-miss';
+      const crownCls=res&&p.pick!==res?'vp-crown miss':'vp-crown';
+      return `<td><span class="vp-pick ${cls}">
+        ${p.king?`<span class="${crownCls}">♛</span>`:''}
+        <span title="${esc(pickTeam(m,p.pick))}">${esc(pickTeam(m,p.pick))}</span>
+      </span></td>`;
+    }).join('');
 
-  if(abiertos.length){
-    const pend=document.createElement('div');
-    pend.className='locked-note';
-    pend.style.textAlign='left';
-    pend.style.padding='0.5rem 0';
-    pend.innerHTML='🔒 <b>'+abiertos.length+' partido(s) aún sin revelar:</b> '
-      +abiertos.map(m=>esc(m.home)+' vs '+esc(m.away)).join(' · ');
-    cont.appendChild(pend);
-  }
+    const resCell=res
+      ? `<td class="vp-res">${esc(pickTeam(m,res))}</td>`
+      : open
+        ? '<td><span class="vp-lock">🔒</span></td>'
+        : '<td><span style="color:var(--amber);font-size:0.7rem">en juego</span></td>';
+
+    return `<tr>
+      <td class="vp-match">
+        <div class="vp-teams">
+          <span class="vp-h">${esc(m.home)}</span>
+          <span class="vp-a">${esc(m.away)}</span>
+        </div>
+      </td>
+      ${cntCell(cnt.W)}${cntCell(cnt.T)}${cntCell(cnt.L)}
+      ${resCell}
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML=`
+    <div class="vp-scroll">
+      <table class="vp">
+        <thead>
+          <tr>
+            <th class="vp-match">Jornada ${jn}</th>
+            <th class="vp-cnt" title="Local">L</th>
+            <th class="vp-cnt" title="Empate">E</th>
+            <th class="vp-cnt" title="Visitante">V</th>
+            <th class="vp-res">Resultado</th>
+            ${users.map(u=>`<th class="vp-user ${u===currentUser?'me':''}">${u===currentUser?'Tú':esc(getDisplayName(u))}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="vp-legend">
+      🔒 = aún no arranca · <b>♛</b> = Rey Pick · <b>dorado</b> = acertó · gris = falló<br>
+      L / E / V = cuántos escogieron Local, Empate o Visitante
+    </div>`;
 }
 
-// ===== CHAMPIONS =====// ===== CHAMPIONS =====
+// ===== CHAMPIONS =====// ===== CHAMPIONS =====// ===== CHAMPIONS =====
 function renderChampions(){
   const list=document.getElementById('champions-list');
   if(!appData.champions.length){
