@@ -103,6 +103,34 @@ async function initSchema() {
   console.log('✓ Base de datos lista');
 }
 
+
+// ---------- FECHAS ----------
+// Las fechas viejas se guardaron sin zona horaria ("2026-07-16T19:00").
+// Node en el servidor corre en UTC, así que las interpretaba 6h antes.
+// México es UTC-6 todo el año (ya no hay horario de verano desde 2022).
+function parseDT(s) {
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    return new Date(s + '-06:00');   // formato viejo, sin zona
+  }
+  return new Date(s);                 // ISO con Z u offset, correcto
+}
+
+function firstMatchTime(matches) {
+  const times = (matches || []).map(m => parseDT(m.datetime)).filter(Boolean);
+  if (!times.length) return null;
+  return times.reduce((a, b) => a < b ? a : b);
+}
+
+// Un partido está cerrado si ya empezó o si ya tiene resultado.
+// Sin fecha = sigue abierto.
+function matchClosed(m) {
+  if (!m) return false;
+  if (m.result) return true;
+  const t = parseDT(m.datetime);
+  return t ? new Date() >= t : false;
+}
+
 // ---------- AUTH ----------
 async function auth(req, res, next) {
   const token = req.headers['x-auth-token'];
@@ -182,15 +210,25 @@ app.get('/api/data', auth, wrap(async (req, res) => {
   const cfg = {};
   config.forEach(c => cfg[c.key] = c.value);
 
-  // Ocultar respuestas de otros hasta que cierre el plazo
-  const deadline = cfg.specialDeadline ? new Date(cfg.specialDeadline) : null;
+  // Los picks de OTROS solo se revelan partido por partido:
+  // en cuanto ese partido arranca (o ya tiene resultado).
+  const closedMatches = new Set();
+  jornadas.forEach(j => (j.matches || []).forEach(m => {
+    if (matchClosed(m)) closedMatches.add(m.id);
+  }));
+  const visiblePicks = picks.filter(p =>
+    p.username === req.user.username || closedMatches.has(p.match_id)
+  );
+
+  // Ocultar respuestas especiales de otros hasta que cierre el plazo
+  const deadline = cfg.specialDeadline ? parseDT(cfg.specialDeadline) : null;
   const specialsLocked = deadline ? new Date() >= deadline : false;
   const visibleAnswers = specialsLocked
     ? specialAnswers
     : specialAnswers.filter(a => a.username === req.user.username);
 
   res.json({
-    jornadas, config: cfg, picks, users, teams, champions,
+    jornadas, config: cfg, picks: visiblePicks, users, teams, champions,
     specialQuestions, specialAnswers: visibleAnswers, specialsLocked
   });
 }));
@@ -204,13 +242,29 @@ app.post('/api/pick', auth, wrap(async (req, res) => {
   const jr = await q(`SELECT matches FROM jornadas WHERE id=$1`, [jornada]);
   if (jr.length) {
     const matches = jr[0].matches || [];
-    const times = matches.map(m => m.datetime ? new Date(m.datetime) : null).filter(Boolean);
-    if (times.length) {
-      const first = times.reduce((a, b) => a < b ? a : b);
-      if (new Date() >= first) return res.status(403).json({ error: 'La jornada ya cerró' });
-    }
     const m = matches.find(x => x.id === match_id);
-    if (m && m.result) return res.status(403).json({ error: 'Ese partido ya tiene resultado' });
+
+    // Bloqueo POR PARTIDO: solo se cierra este, no toda la jornada
+    if (matchClosed(m)) {
+      return res.status(403).json({ error: 'Ese partido ya empezó' });
+    }
+
+    // El Rey ya usado en un partido CERRADO de esta jornada no se puede mover
+    if (king) {
+      const otros = await q(
+        `SELECT match_id FROM picks
+         WHERE username=$1 AND jornada=$2 AND match_id<>$3 AND king=TRUE`,
+        [username, jornada, match_id]
+      );
+      for (const o of otros) {
+        const om = matches.find(x => x.id === o.match_id);
+        if (matchClosed(om)) {
+          return res.status(403).json({
+            error: 'Ya usaste tu Rey en un partido que ya empezó en esta jornada'
+          });
+        }
+      }
+    }
   }
 
   await q(`INSERT INTO picks (username, jornada, match_id, pick, king)

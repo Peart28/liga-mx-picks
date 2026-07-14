@@ -372,7 +372,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       </div>
       <div class="king-info" id="king-info-bar"></div>
       <div id="matches-list"></div>
-      <div class="locked-note" id="locked-note-main" style="display:none">🔒 Los picks de los demás se revelan cuando arranca el primer partido.</div>
+      <div class="locked-note" id="locked-note-main" style="display:none">🔒 Los picks de los demás se revelan partido por partido, en cuanto cada uno arranca.</div>
     </div>
 
     <!-- STANDINGS -->
@@ -752,11 +752,17 @@ async function showTab(tab){
 // ===== HELPERS =====
 function getJornadaMatches(jid){const j=appData.jornadas.find(x=>x.id===jid);return j?j.matches||[]:[];}
 function getPickObj(jid,mid){const p=appData.picks.find(x=>x.username===currentUser&&x.jornada===jid&&x.match_id===mid);return p||{pick:null,king:false};}
-function isJornadaLocked(jid){
-  const m=getJornadaMatches(jid);if(!m.length)return false;
-  const t=m.map(x=>x.datetime?new Date(x.datetime):null).filter(Boolean);
-  if(!t.length)return false;
-  return new Date()>=t.reduce((a,b)=>a<b?a:b);
+// Un partido se cierra solo, cuando empieza (o si ya tiene resultado)
+function matchClosed(m){
+  if(!m)return false;
+  if(m.result)return true;
+  const t=parseDT(m.datetime);
+  return t?new Date()>=t:false;
+}
+function jornadaStats(jid){
+  const ms=getJornadaMatches(jid);
+  const closed=ms.filter(matchClosed).length;
+  return{total:ms.length,closed,open:ms.length-closed};
 }
 function getKingUsedTeams(){
   const used=new Set();
@@ -774,7 +780,12 @@ function calcPts(pick,result){
   if(pick.king)pts+=pick.pick===result?1:-1;
   return pts;
 }
-function fmtDate(dt){if(!dt)return'';return new Date(dt).toLocaleDateString('es-MX',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function parseDT(s){
+  if(!s)return null;
+  if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s))return new Date(s+'-06:00');
+  return new Date(s);
+}
+function fmtDate(dt){const d=parseDT(dt);if(!d)return'';return d.toLocaleDateString('es-MX',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function resLabel(r){return r==='W'?'Local':r==='T'?'Empate':r==='L'?'Visitante':'';}
 function pickLabel(p){return p==='W'?'Local':p==='T'?'Empate':p==='L'?'Visit':'—';}
 function getDisplayName(u){const x=appData.users.find(y=>y.username===u);return(x&&x.apodo)||u;}
@@ -823,7 +834,7 @@ async function savePick(mid,choice,jn){
     const o={username:currentUser,jornada:jn,match_id:mid,pick:np,king:kingStays};
     if(i>=0)appData.picks[i]=o;else appData.picks.push(o);
     renderPicks();renderJornadaBar();
-  }catch(e){showToast('Error guardando pick');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error('savePick:',e);}
 }
 
 async function toggleKing(mid,home,away,jn){
@@ -833,6 +844,12 @@ async function toggleKing(mid,home,away,jn){
   const used=getKingUsedTeams();
   if(!p.king&&used.has(team)){showToast('⚠ Ya usaste el Rey con '+team);return;}
   const nk=!p.king;
+  const ms=getJornadaMatches(jn);
+  if(nk){
+    // Si el Rey ya está puesto en un partido que YA empezó, no se puede mover
+    const locked=appData.picks.find(x=>x.username===currentUser&&x.jornada===jn&&x.match_id!==mid&&x.king&&x.pick&&matchClosed(ms.find(m=>m.id===x.match_id)));
+    if(locked){showToast('⚠ Ya usaste tu Rey en un partido que ya empezó');return;}
+  }
   try{
     if(nk){
       const others=appData.picks.filter(x=>x.username===currentUser&&x.jornada===jn&&x.match_id!==mid&&x.king&&x.pick);
@@ -843,15 +860,19 @@ async function toggleKing(mid,home,away,jn){
     const o={username:currentUser,jornada:jn,match_id:mid,pick:p.pick,king:nk};
     if(i>=0)appData.picks[i]=o;else appData.picks.push(o);
     renderPicks();
-  }catch(e){showToast('Error guardando Rey Pick');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error('toggleKing:',e);}
 }
 
 function renderPicks(){
   const jn=selectedJornada;
   document.getElementById('picks-jornada-title').textContent=jn?'Jornada '+jn:'Sin jornadas';
   const matches=getJornadaMatches(jn);
-  const locked=jn?isJornadaLocked(jn):false;
-  document.getElementById('picks-locked-sub').textContent=locked?'🔒 Cerrada para picks':'✏️ Abierta para picks';
+  const st=jn?jornadaStats(jn):{total:0,closed:0,open:0};
+  const sub=document.getElementById('picks-locked-sub');
+  if(!st.total)sub.textContent='';
+  else if(st.open===0)sub.textContent='🔒 Todos los partidos cerraron';
+  else if(st.closed===0)sub.textContent='✏️ '+st.open+' partido(s) abiertos';
+  else sub.textContent='✏️ '+st.open+' abiertos · 🔒 '+st.closed+' cerrados';
   const used=getKingUsedTeams();
   document.getElementById('king-info-bar').innerHTML='♛ <b>Rey Pick</b> · +1 si aciertas, −1 si fallas. Una vez por equipo en toda la temporada.'+(used.size?'<br>Equipos usados: '+[...used].map(esc).join(', '):'');
   const list=document.getElementById('matches-list');list.innerHTML='';
@@ -859,7 +880,7 @@ function renderPicks(){
   matches.forEach(m=>{
     const pick=getPickObj(jn,m.id);
     const hasRes=!!m.result;
-    const isLocked=locked||hasRes;
+    const isLocked=matchClosed(m);
     const pts=hasRes?calcPts(pick,m.result):0;
     const kTeam=pick.pick==='W'?m.home:pick.pick==='L'?m.away:'';
     const kUsed=!pick.king&&pick.pick&&pick.pick!=='T'&&used.has(kTeam);
@@ -1021,8 +1042,7 @@ function renderMatrix(){
 
 // ===== PREGUNTAS ESPECIALES =====
 function specialsDeadline(){
-  const d=appData.config.specialDeadline;
-  return d?new Date(d):null;
+  return parseDT(appData.config.specialDeadline);
 }
 
 function renderSpecials(){
@@ -1119,42 +1139,83 @@ async function answerSpecial(qid,answer){
 function renderOthers(){
   const jn=selectedJornada;
   document.getElementById('others-jornada-title').textContent='Picks de todos'+(jn?' · J'+jn:'');
-  const locked=jn?isJornadaLocked(jn):false;
   const note=document.getElementById('others-lock-note');
   const cont=document.getElementById('others-content');
-  if(!locked){
-    note.textContent='🔒 Se revelan cuando empieza el primer partido.';
-    note.style.color='var(--amber)';
-    cont.innerHTML='<div class="empty-state"><span class="icon">🔒</span>Vuelve cuando arranque la jornada.</div>';
+  const matches=getJornadaMatches(jn);
+  const abiertos=matches.filter(m=>!matchClosed(m));
+  const cerrados=matches.filter(matchClosed);
+
+  if(!matches.length){
+    note.textContent='';
+    cont.innerHTML='<div class="empty-state"><span class="icon">⚽</span>Sin partidos en esta jornada.</div>';
     return;
   }
-  note.textContent='✅ Jornada iniciada · picks revelados';
+
+  if(!cerrados.length){
+    note.textContent='🔒 Cada partido se revela cuando arranca.';
+    note.style.color='var(--amber)';
+    const prox=abiertos.map(m=>parseDT(m.datetime)).filter(Boolean).sort((a,b)=>a-b)[0];
+    cont.innerHTML='<div class="empty-state"><span class="icon">🔒</span>Ningún partido ha arrancado.'
+      +(prox?'<br><span style="font-size:0.78rem;color:var(--dim)">El primero es el '+fmtDate(prox)+'</span>':'')+'</div>';
+    return;
+  }
+
+  note.textContent='✅ '+cerrados.length+' de '+matches.length+' partidos revelados';
   note.style.color='var(--green-glow)';
-  const matches=getJornadaMatches(jn);
-  const jp=appData.picks.filter(p=>p.jornada===jn&&p.username!==currentUser&&p.pick);
-  const users=[...new Set(jp.map(p=>p.username))];
-  if(!users.length){cont.innerHTML='<div class="empty-state"><span class="icon">🤷</span>Aún no hay picks de otros.</div>';return;}
+
+  const users=appData.users.map(u=>u.username).filter(u=>u!==currentUser);
   cont.innerHTML='';
-  const grid=document.createElement('div');grid.className='others-grid';
-  users.forEach(u=>{
-    const c=document.createElement('div');c.className='other-card';
+
+  cerrados.forEach(m=>{
+    const card=document.createElement('div');
+    card.className='other-card';
+    card.style.marginBottom='0.8rem';
+
     let rows='';
-    matches.forEach(m=>{
-      const p=jp.find(x=>x.username===u&&x.match_id===m.id);
-      const pv=p&&p.pick?p.pick:null;
+    users.forEach(u=>{
+      const p=appData.picks.find(x=>x.username===u&&x.jornada===jn&&x.match_id===m.id&&x.pick);
+      const pv=p?p.pick:null;
+      let cls='';
+      if(m.result&&pv)cls=pv===m.result?'op-W':'op-L';
+      else if(pv)cls='op-'+pv;
       rows+=`<div class="other-pick-row">
-        <span class="other-teams-lbl">${esc(m.home)} vs ${esc(m.away)}</span>
+        <span class="other-teams-lbl">${esc(getDisplayName(u))}</span>
         ${p&&p.king?'<span class="op-crown">♛</span>':''}
         <span class="other-pick-val ${pv?'op-'+pv:''}">${pickLabel(pv)}</span>
       </div>`;
     });
-    c.innerHTML=`<div class="other-name">${esc(getDisplayName(u))}</div>${rows}`;
-    grid.appendChild(c);
+
+    const mine=appData.picks.find(x=>x.username===currentUser&&x.jornada===jn&&x.match_id===m.id&&x.pick);
+    if(mine){
+      rows=`<div class="other-pick-row" style="border-bottom:1px solid var(--green-dark)">
+        <span class="other-teams-lbl" style="color:var(--green-glow);font-weight:500">Tú</span>
+        ${mine.king?'<span class="op-crown">♛</span>':''}
+        <span class="other-pick-val op-${mine.pick}">${pickLabel(mine.pick)}</span>
+      </div>`+rows;
+    }
+
+    card.innerHTML=`
+      <div class="other-name" style="display:flex;align-items:center;gap:7px;justify-content:space-between">
+        <span>${esc(m.home)} vs ${esc(m.away)}</span>
+        ${m.result?`<span class="res-chip res-${m.result}" style="font-size:0.65rem">${resLabel(m.result)}</span>`
+                  :'<span style="font-size:0.65rem;color:var(--amber);font-weight:400">en juego</span>'}
+      </div>
+      ${rows||'<div style="font-size:0.75rem;color:var(--dim)">Nadie pickeó este partido</div>'}`;
+    cont.appendChild(card);
   });
-  cont.appendChild(grid);
+
+  if(abiertos.length){
+    const pend=document.createElement('div');
+    pend.className='locked-note';
+    pend.style.textAlign='left';
+    pend.style.padding='0.5rem 0';
+    pend.innerHTML='🔒 <b>'+abiertos.length+' partido(s) aún sin revelar:</b> '
+      +abiertos.map(m=>esc(m.home)+' vs '+esc(m.away)).join(' · ');
+    cont.appendChild(pend);
+  }
 }
 
-// ===== CHAMPIONS =====
+// ===== CHAMPIONS =====// ===== CHAMPIONS =====
 function renderChampions(){
   const list=document.getElementById('champions-list');
   if(!appData.champions.length){
@@ -1464,7 +1525,7 @@ async function addTeam(){
     document.getElementById('team-name').value='';
     document.getElementById('team-logo').value='';
     renderAdmin();showToast('Equipo guardado ✓');
-  }catch(e){showToast('Error guardando equipo');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 async function deleteTeam(n){
@@ -1473,7 +1534,7 @@ async function deleteTeam(n){
     await db.deleteTeam(n);
     appData.teams=appData.teams.filter(t=>t.name!==n);
     renderAdmin();showToast('Equipo eliminado');
-  }catch(e){showToast('Error eliminando');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 async function addJornada(){
@@ -1487,7 +1548,7 @@ async function addJornada(){
     if(!appData.config.currentJornada){await db.setConfig('currentJornada',n);appData.config.currentJornada=n;}
     document.getElementById('new-jorn-num').value='';
     renderAdmin();renderJornadaBar();showToast('Jornada '+n+' creada ✓');
-  }catch(e){showToast('Error creando jornada');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 async function addMatch(){
@@ -1499,12 +1560,12 @@ async function addMatch(){
   if(home===away){showToast('No pueden ser el mismo equipo');return}
   const j=appData.jornadas.find(x=>x.id===jn);if(!j)return;
   j.matches=j.matches||[];
-  j.matches.push({id:'m'+Date.now(),home,away,datetime:dt||null,result:null});
+  j.matches.push({id:'m'+Date.now(),home,away,datetime:dt?new Date(dt).toISOString():null,result:null});
   try{
     await db.upsertJornada(jn,j.matches);
     document.getElementById('match-date').value='';
     renderAdmin();showToast('Partido agregado ✓');
-  }catch(e){showToast('Error guardando partido');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 async function deleteMatch(jn,id){
@@ -1538,7 +1599,7 @@ async function addChampion(){
     document.getElementById('champ-runner').value='';
     document.getElementById('champ-last').value='';
     renderAdmin();showToast('Campeón guardado 🏆');
-  }catch(e){showToast('Error guardando campeón');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 async function deleteChampion(id){
@@ -1547,7 +1608,7 @@ async function deleteChampion(id){
     await db.deleteChampion(id);
     appData.champions=appData.champions.filter(c=>c.id!==id);
     renderAdmin();showToast('Registro eliminado');
-  }catch(e){showToast('Error eliminando');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 async function deleteUser(u){
@@ -1556,7 +1617,7 @@ async function deleteUser(u){
     await db.deleteUser(u);
     appData.users=appData.users.filter(x=>x.username!==u);
     renderAdmin();showToast('Usuario eliminado');
-  }catch(e){showToast('Error eliminando usuario');console.error(e);}
+  }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
 
 // ===== NOTIFICATIONS =====
@@ -1615,7 +1676,7 @@ async function checkJornadaReminders(){
   const now=new Date();
   for(const j of appData.jornadas){
     const ms=j.matches||[];if(!ms.length)continue;
-    const ts=ms.map(m=>m.datetime?new Date(m.datetime):null).filter(Boolean);
+    const ts=ms.map(m=>parseDT(m.datetime)).filter(Boolean);
     if(!ts.length)continue;
     const first=ts.reduce((a,b)=>a<b?a:b);
     const diffH=(first-now)/3600000;
