@@ -90,7 +90,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .team-name.away{color:var(--muted);font-weight:400}
 .match-time{font-size:0.7rem;color:var(--dim);margin-top:2px;padding-left:34px}
 .pick-btns{display:flex;gap:5px}
-.pick-btn{border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.74rem;font-weight:500;padding:7px 12px;border-radius:7px;cursor:pointer;transition:all 0.15s}
+.pick-btn{border:1px solid var(--border);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:0.74rem;font-weight:500;padding:7px 12px;border-radius:7px;cursor:pointer;transition:all 0.15s;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pick-btn.pb-tie{flex-shrink:0}
 .pick-btn:hover:not(:disabled){border-color:var(--muted);color:var(--text)}
 .pick-btn:disabled{opacity:0.35;cursor:default}
 .pick-btn.sel-W{background:var(--green);border-color:var(--green);color:#04150a;font-weight:700}
@@ -135,7 +136,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .other-pick-row{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:0.76rem;padding:5px 0;border-bottom:1px solid var(--border-soft)}
 .other-pick-row:last-child{border-bottom:none}
 .other-teams-lbl{color:var(--muted);flex:1;font-size:0.73rem}
-.other-pick-val{font-weight:700;font-size:0.7rem;padding:2px 8px;border-radius:4px}
+.other-pick-val{font-weight:700;font-size:0.7rem;padding:2px 8px;border-radius:4px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
 .op-W{background:rgba(0,180,81,0.15);color:var(--green-glow)}
 .op-T{background:rgba(255,149,0,0.15);color:var(--amber)}
 .op-L{background:rgba(228,0,43,0.15);color:#ff5c72}
@@ -244,8 +245,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
   .king-info{margin:0 0.85rem 0.7rem;font-size:0.74rem}
   .match-card{margin:0 0.85rem 0.6rem;padding:0.85rem}
   .match-top{flex-direction:column;align-items:stretch;gap:0.7rem}
-  .pick-btns{width:100%}
-  .pick-btn{flex:1;text-align:center;padding:9px 6px}
+  .pick-btns{width:100%;flex-direction:column;gap:6px}
+  .pick-btn{width:100%;max-width:none;text-align:center;padding:11px 8px;font-size:0.82rem}
   .king-btn{width:100%;text-align:center;padding:9px}
   .stand-wrap,.champ-wrap,.admin-wrap{padding:0.85rem}
   .perfil-wrap{padding:1.2rem 0.85rem}
@@ -788,6 +789,12 @@ function parseDT(s){
 function fmtDate(dt){const d=parseDT(dt);if(!d)return'';return d.toLocaleDateString('es-MX',{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function resLabel(r){return r==='W'?'Local':r==='T'?'Empate':r==='L'?'Visitante':'';}
 function pickLabel(p){return p==='W'?'Local':p==='T'?'Empate':p==='L'?'Visit':'—';}
+// Nombre del equipo en lugar de Local/Visitante
+function pickTeam(m,p){
+  if(!p)return '—';
+  if(p==='T')return 'Empate';
+  return p==='W'?m.home:m.away;
+}
 function getDisplayName(u){const x=appData.users.find(y=>y.username===u);return(x&&x.apodo)||u;}
 function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
@@ -897,16 +904,16 @@ function renderPicks(){
           ${m.datetime?`<div class="match-time">${fmtDate(m.datetime)}</div>`:''}
         </div>
         <div class="pick-btns">
-          <button class="pick-btn ${pick.pick==='W'?'sel-W':''}" ${isLocked?'disabled':''} onclick="savePick('${m.id}','W','${jn}')">Local</button>
-          <button class="pick-btn ${pick.pick==='T'?'sel-T':''}" ${isLocked?'disabled':''} onclick="savePick('${m.id}','T','${jn}')">Empate</button>
-          <button class="pick-btn ${pick.pick==='L'?'sel-L':''}" ${isLocked?'disabled':''} onclick="savePick('${m.id}','L','${jn}')">Visitante</button>
+          <button class="pick-btn ${pick.pick==='W'?'sel-W':''}" ${isLocked?'disabled':''} onclick="savePick('${m.id}','W','${jn}')" title="${esc(m.home)}">${esc(m.home)}</button>
+          <button class="pick-btn pb-tie ${pick.pick==='T'?'sel-T':''}" ${isLocked?'disabled':''} onclick="savePick('${m.id}','T','${jn}')">Empate</button>
+          <button class="pick-btn ${pick.pick==='L'?'sel-L':''}" ${isLocked?'disabled':''} onclick="savePick('${m.id}','L','${jn}')" title="${esc(m.away)}">${esc(m.away)}</button>
         </div>
         <button class="king-btn ${pick.king?'king-active':''}" ${kDis?'disabled':''} onclick="toggleKing('${m.id}','${esc(m.home)}','${esc(m.away)}','${jn}')" title="${kTitle}">
           ♛ ${pick.king?'Rey activo':'Rey Pick'}
         </button>
       </div>
       ${hasRes?`<div class="match-result">
-        Resultado: <span class="res-chip res-${m.result}">${resLabel(m.result)}</span>
+        Resultado: <span class="res-chip res-${m.result}">${esc(pickTeam(m,m.result))}</span>
         ${pick.pick?`<div class="res-row"><span class="res-pts ${ptsCls}">${pts>0?'+':''}${pts} pts</span>${pick.king?`<span class="${pts>0?'res-king-ok':'res-king-bad'}">${pts>0?'♛ Rey acertado':'♛ Rey fallado'}</span>`:''}</div>`:'<div style="color:var(--dim);font-size:0.72rem;margin-top:4px">Sin pick · 0 pts</div>'}
       </div>`:''}`;
     list.appendChild(c);
@@ -1181,7 +1188,7 @@ function renderOthers(){
       rows+=`<div class="other-pick-row">
         <span class="other-teams-lbl">${esc(getDisplayName(u))}</span>
         ${p&&p.king?'<span class="op-crown">♛</span>':''}
-        <span class="other-pick-val ${pv?'op-'+pv:''}">${pickLabel(pv)}</span>
+        <span class="other-pick-val ${pv?'op-'+pv:''}">${esc(pickTeam(m,pv))}</span>
       </div>`;
     });
 
@@ -1190,14 +1197,14 @@ function renderOthers(){
       rows=`<div class="other-pick-row" style="border-bottom:1px solid var(--green-dark)">
         <span class="other-teams-lbl" style="color:var(--green-glow);font-weight:500">Tú</span>
         ${mine.king?'<span class="op-crown">♛</span>':''}
-        <span class="other-pick-val op-${mine.pick}">${pickLabel(mine.pick)}</span>
+        <span class="other-pick-val op-${mine.pick}">${esc(pickTeam(m,mine.pick))}</span>
       </div>`+rows;
     }
 
     card.innerHTML=`
       <div class="other-name" style="display:flex;align-items:center;gap:7px;justify-content:space-between">
         <span>${esc(m.home)} vs ${esc(m.away)}</span>
-        ${m.result?`<span class="res-chip res-${m.result}" style="font-size:0.65rem">${resLabel(m.result)}</span>`
+        ${m.result?`<span class="res-chip res-${m.result}" style="font-size:0.65rem">${esc(pickTeam(m,m.result))}</span>`
                   :'<span style="font-size:0.65rem;color:var(--amber);font-weight:400">en juego</span>'}
       </div>
       ${rows||'<div style="font-size:0.75rem;color:var(--dim)">Nadie pickeó este partido</div>'}`;
