@@ -290,6 +290,20 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .spec-opt.correct{background:rgba(0,180,81,0.18);border-color:var(--green);color:var(--green-glow);font-weight:700}
 .spec-opt.wrong{background:rgba(228,0,43,0.15);border-color:var(--red);color:#ff8a9c}
 .spec-result{margin-top:0.8rem;padding-top:0.8rem;border-top:1px solid var(--border-soft);font-size:0.78rem}
+.spec-ans-title{font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin:0.9rem 0 0.5rem}
+.spec-ans-group{margin-bottom:0.7rem}
+.spec-ans-opt{display:flex;align-items:center;gap:7px;font-size:0.8rem;font-weight:700;margin-bottom:0.35rem}
+.spec-ans-opt .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--muted)}
+.spec-ans-opt.win .dot{background:var(--gold)}
+.spec-ans-opt.win{color:var(--gold)}
+.spec-ans-count{font-size:0.68rem;color:var(--dim);font-weight:500}
+.spec-ans-names{display:flex;flex-wrap:wrap;gap:5px;padding-left:15px;margin-bottom:0.2rem}
+.spec-name-chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border-soft);border-radius:20px;padding:3px 10px;font-size:0.76rem;color:var(--text)}
+.spec-name-chip.hit{border-color:rgba(240,180,41,0.4);background:rgba(240,180,41,0.08)}
+.spec-name-chip.hit .nm{color:var(--gold)}
+.spec-name-chip.me{border-color:var(--green-dark)}
+.spec-name-chip.me .nm{color:var(--green-glow)}
+.spec-crown{color:var(--gold);font-size:10px}
 .spec-deadline{background:rgba(160,100,220,0.1);border:1px solid #5a3a7a;border-radius:10px;padding:0.65rem 0.85rem;margin:0 1.2rem 0.85rem;font-size:0.78rem;color:#d0a8f0}
 
 /* RESUMEN SALÓN DE LA FAMA */
@@ -1164,20 +1178,6 @@ function renderSpecials(){
     card.className='spec-card';
 
     let others='';
-    if(locked){
-      const rows=appData.specialAnswers
-        .filter(a=>String(a.question_id)===String(qq.id)&&a.username!==currentUser);
-      if(rows.length){
-        others=`<div class="spec-result"><span style="color:var(--muted)">Respuestas: </span>`
-          + rows.map(a=>{
-              const ok=graded?(a.answer===qq.correct_answer):null;
-              const col=ok===null?'var(--muted)':ok?'var(--green-glow)':'#ff8a9c';
-              return `<span style="color:${col}">${esc(getDisplayName(a.username))} → ${esc(a.answer)}</span>`;
-            }).join(' · ')
-          + `</div>`;
-      }
-    }
-
     let resultLine='';
     if(graded){
       const hit=myAns===qq.correct_answer;
@@ -1201,10 +1201,61 @@ function renderSpecials(){
           return `<button class="${cls}" ${dis?'disabled':''} onclick="answerSpecial(${qq.id},'${esc(o).replace(/'/g,"\\'")}')">${esc(o)}</button>`;
         }).join('')}
       </div>
-      ${resultLine}
-      ${others}`;
+      ${resultLine}`;
     list.appendChild(card);
   });
+
+  // Matriz de respuestas de todos (solo cuando ya cerró)
+  if(locked){
+    renderSpecialsMatrix(list);
+  }
+}
+
+function renderSpecialsMatrix(list){
+  const qs=appData.specialQuestions;
+  const users=[currentUser,...appData.users.map(u=>u.username).filter(u=>u!==currentUser)];
+  const ansOf=(u,qid)=>{
+    const a=appData.specialAnswers.find(x=>x.username===u&&String(x.question_id)===String(qid));
+    return a?a.answer:null;
+  };
+
+  const rows2=qs.map(qq=>{
+    const graded=!!qq.correct_answer;
+    const cells=users.map(u=>{
+      const a=appData.specialAnswers.find(x=>x.username===u&&String(x.question_id)===String(qq.id));
+      const ans=a?a.answer:null;
+      if(!ans)return '<td><span class="vp-none">—</span></td>';
+      let cls='vp-pend';
+      if(graded)cls=ans===qq.correct_answer?'vp-hit':'vp-miss';
+      return `<td><span class="vp-pick ${cls}"><span title="${esc(ans)}">${esc(ans)}</span></span></td>`;
+    }).join('');
+    const resCell=graded
+      ? `<td class="vp-res">${esc(qq.correct_answer)}</td>`
+      : '<td><span style="color:var(--amber);font-size:0.7rem">sin calificar</span></td>';
+    return `<tr>
+      <td class="vp-match"><div class="vp-teams"><span class="vp-h">${esc(qq.question)}</span><span class="vp-a">Vale ${qq.points||1} pts</span></div></td>
+      ${resCell}
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  const wrap=document.createElement('div');
+  wrap.style.marginTop='0.5rem';
+  wrap.innerHTML=`
+    <div class="vp-scroll">
+      <table class="vp">
+        <thead>
+          <tr>
+            <th class="vp-match">Preguntas</th>
+            <th class="vp-res">Correcta</th>
+            ${users.map(u=>`<th class="vp-user ${u===currentUser?'me':''}">${u===currentUser?'Tú':esc(getDisplayName(u))}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>${rows2}</tbody>
+      </table>
+    </div>
+    <div class="vp-legend"><b>♛</b> no aplica aquí · <b>dorado</b> = acertó · gris = falló · — = no respondió</div>`;
+  list.appendChild(wrap);
 }
 
 async function answerSpecial(qid,answer){
