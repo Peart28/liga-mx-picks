@@ -1490,7 +1490,23 @@ function renderAdminMatches(){
     if(!ms.length){const e=document.createElement('div');e.className='item-row';e.innerHTML='<span style="color:var(--dim);font-size:0.75rem">Sin partidos</span>';l.appendChild(e);return;}
     ms.forEach(m=>{
       const r=document.createElement('div');r.className='item-row';
-      r.innerHTML=`<span class="item-label">${esc(m.home)} vs ${esc(m.away)} <span style="color:var(--dim);font-size:0.7rem">${m.datetime?fmtDate(m.datetime):'sin fecha'}</span></span>
+      // valor para datetime-local: convertir el guardado a hora local México
+      let dtLocal='';
+      if(m.datetime){
+        const d=parseDT(m.datetime);
+        if(d&&!isNaN(d)){
+          const p=n=>String(n).padStart(2,'0');
+          dtLocal=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+        }
+      }
+      const cerrado=matchClosed(m);
+      r.innerHTML=`<span class="item-label" style="flex-direction:column;align-items:flex-start;gap:3px">
+          <span>${esc(m.home)} vs ${esc(m.away)} ${cerrado?'<span style="color:var(--amber);font-size:0.65rem">● cerrado</span>':''}</span>
+          <span style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+            <input type="datetime-local" id="edit-dt-${m.id}" value="${dtLocal}" style="padding:4px 7px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.74rem;font-family:'DM Sans',sans-serif;outline:none"/>
+            <button class="btn-save-result" onclick="saveMatchTime('${j.id}','${m.id}')">Cambiar hora</button>
+          </span>
+        </span>
         <button class="btn-danger" onclick="deleteMatch('${j.id}','${m.id}')">Eliminar</button>`;
       l.appendChild(r);
     });
@@ -1672,6 +1688,25 @@ async function addMatch(){
     renderAdmin();showToast('Partido agregado ✓');
   }catch(e){showToast('⚠ '+e.message);console.error(e);}
 }
+
+async function saveMatchTime(jn,mid){
+  const val=document.getElementById('edit-dt-'+mid).value;
+  const j=appData.jornadas.find(x=>x.id===jn);if(!j)return;
+  const m=(j.matches||[]).find(x=>x.id===mid);if(!m)return;
+  // Conserva el mismo id -> los picks NO se pierden
+  const nuevo=val?new Date(val).toISOString():null;
+  const antes=m.datetime;
+  m.datetime=nuevo;
+  try{
+    await db.upsertJornada(jn,j.matches);
+    await loadAppData();renderAdmin();
+    const reabrio=antes&&nuevo&&matchClosedAt(antes)&&!matchClosedAt(nuevo);
+    showToast(reabrio?'Hora cambiada ✓ · el partido se reabrió para picks':'Hora cambiada ✓');
+  }catch(e){m.datetime=antes;showToast('⚠ '+e.message);console.error(e);}
+}
+
+// versión de matchClosed que evalúa una fecha suelta
+function matchClosedAt(dt){const t=parseDT(dt);return t?new Date()>=t:false;}
 
 async function deleteMatch(jn,id){
   if(!confirm('¿Eliminar este partido?'))return;
